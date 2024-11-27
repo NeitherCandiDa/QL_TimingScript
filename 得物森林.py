@@ -1148,5 +1148,5 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-    send_notification_message_collection("好游快爆活动奖励领取通知 - {}".format(datetime.now().strftime("%Y/%m/%d")))
+    send_notification_message_collection("得物森林通知 - {}".format(datetime.now().strftime("%Y/%m/%d")))
 
