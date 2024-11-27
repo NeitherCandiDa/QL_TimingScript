@@ -2,29 +2,35 @@
 # const $ = new Env('得物森林')
 # cron "1 8,10,12,15,18,22 * * *"
 """
-dw_x_auth_token：Bearer xxxxxxxxxxxx   (）
+配置环境变量：
+dw_x_auth_token：Bearer xxxxxxxxxxxx   (多个账号用&分割），
+dw_sk： xxxxxxxxxxxxxxxxxxxxxxxxxxxx   (多个账号用&分割）
+如果运行存在问题 最好改一下User-Agent
+获取这两个变量的方法就是随便抓一个包含app.dewu.com/hacking-tree的URL，请求头里面的x-auth-token和SK
+
+1、浇水充满气泡 存在bug
+2、领取品牌特惠活动奖励存在bug
+3、获取助力码存在bug
 """
 import os
 import asyncio
 import random
 import re
 import time
+from datetime import datetime
+
 import httpx
 from urllib.parse import urlparse, parse_qs
 from fn_print import fn_print
 from get_env import get_env
+from sendNotify import send_notification_message_collection
 
-os.environ["dw_x_auth_token"] = (
-    "***REMOVED***"
-)
-os.environ["dw_sk"] = (
-    "***REMOVED***"
-)
+
 dw_x_auth_tokens = get_env("dw_x_auth_token", "&")
 dw_sks = get_env("dw_sk", "&")
 
 share_code_list = []
-HELP_SIGNAL = True
+HELP_SIGNAL = True  # 是否助力
 
 
 class DeWu:
@@ -995,7 +1001,7 @@ class DeWu:
         :return: 
         """
         receive_brand_specials_response = await self.client.get(
-            url="https://app.dewu.com/hacking-ad/v1/activity/list?bizId=tree",
+            url="https://app.dewu.com/hacking-ad/v1/activity/compound/list?bizId=tree",
             headers=self.headers
         )
         if receive_brand_specials_response.status_code == 200:
@@ -1010,7 +1016,7 @@ class DeWu:
             for ad in ad_list:
                 if ad.get("isReceived"):
                     continue
-                aid = ad.get("id")
+                aid = ad.get("task").get("taskId")
                 receive_brand_specials_response = await self.client.post(
                     url="https://app.dewu.com/hacking-ad/v1/activity/receive",
                     headers=self.headers,
@@ -1107,6 +1113,9 @@ class DeWu:
         fn_print(f"用户【{self.user_name}】，===当前水滴数：{droplet_number}===")
         await self.determine_whether_is_team_tree()
         await self.get_tree_planting_progress()
+        # if HELP_SIGNAL:
+        #     fn_print(f"用户【{self.user_name}】，===开始获取助力码===")
+        #     share_code_list.append(await self.get_share_code())
         task_list = [
             self.droplet_sign_in(),
             self.receive_droplet_extra(),
@@ -1119,13 +1128,14 @@ class DeWu:
             self.receive_air_drop(),
             self.droplet_invest(),
             self.click_product(),
-            self.receive_brand_specials(),
-            self.help_user(),
+            # self.receive_brand_specials(),
+            # self.help_user(),
             self.receive_help_reward(),
             self.receive_level_reward(),
             self.waterting_until_less_than()
         ]
         await asyncio.gather(*task_list)
+        await self.get_tree_planting_progress()
 
 
 async def main():
@@ -1138,3 +1148,5 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+    send_notification_message_collection("好游快爆活动奖励领取通知 - {}".format(datetime.now().strftime("%Y/%m/%d")))
+
