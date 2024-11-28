@@ -12,7 +12,6 @@ dw_sk： xxxxxxxxxxxxxxxxxxxxxxxxxxxx   (多个账号用&分割）
 2、领取品牌特惠活动奖励存在bug
 3、获取助力码存在bug
 """
-import os
 import asyncio
 import random
 import re
@@ -38,7 +37,7 @@ class DeWu:
     REMAINING_G: int = 1800  # 最后浇水剩余不超过的克数
 
     def __init__(self, x_auth_token, index, sk, waterting_g=WATERTING_G, remaining_g=REMAINING_G):
-        self.client = httpx.AsyncClient(verify=False)
+        self.client = httpx.AsyncClient(verify=False, timeout=60)
         self.index = index
         self.waterting_g = waterting_g
         self.remaining_g = remaining_g
@@ -561,18 +560,18 @@ class DeWu:
         """
         await self.get_task_list()
         for task_dict in self.tasks_dict_list:
-            if task_dict.get("isReceiveReward"):
+            if task_dict.get("isReceiveReward"):    # 为True，这个任务奖励已经领取过了
                 continue
-            if task_dict.get("rewardCount") >= 3000:
+            if task_dict.get("rewardCount") >= 3000:    # 奖励的水滴大于3000，需要下单，跳过
                 continue
             classify = task_dict.get('classify')
             task_id = task_dict.get('taskId')
             task_type = task_dict.get('taskType')
             task_name = task_dict.get('taskName')
             btd = self.get_url_key_value(task_dict.get('jumpUrl'), 'btd')
-            btd = int(btd) if btd else btd
+            btd = int(btd) if btd else 0
             spu_id = self.get_url_key_value(task_dict.get('jumpUrl'), 'spuId')
-            spu_id = int(spu_id) if spu_id else spu_id
+            spu_id = int(spu_id) if spu_id else 0
             if task_dict.get("isComplete"):
                 if task_name == "领40g水滴值" and not task_dict.get("receivable"):
                     continue
@@ -609,109 +608,109 @@ class DeWu:
                     if report_action_data.get("code"):
                         await self.receive_task_reward(classify, task_id, task_type)
                     continue
-                if any(re.match(pattern, task_name) for pattern in
-                       ["参与1次上上签活动", "从桌面组件访问许愿树", "参与1次拆盲盒", "去.*"]):
-                    await self.submit_task_completion_status(
-                        {
-                            "taskId": task_id,
-                            "taskType": str(task_type)
-                        }
-                    )
-                    await self.receive_task_reward(classify, task_id, task_type)
-                    continue
+            if any(re.match(pattern, task_name) for pattern in
+                   ["参与1次上上签活动", "从桌面组件访问许愿树", "参与1次拆盲盒", "去.*"]):
+                await self.submit_task_completion_status(
+                    {
+                        "taskId": task_id,
+                        "taskType": int(task_type)
+                    }
+                )
+                await self.receive_task_reward(classify, task_id, task_type)
+                continue
 
-                if any(re.match(pattern, task_name) for pattern in [".*订阅.*", ".*逛一逛.*", "逛逛.*活动"]):
+            if any(re.match(pattern, task_name) for pattern in [".*订阅.*", ".*逛一逛.*", "逛逛.*活动"]):
+                await self.submit_task_completion_status(
+                    {
+                        "taskId": task_id,
+                        "taskType": int(task_type),
+                        "btd": btd
+                    }
+                )
+                await self.receive_task_reward(classify, task_id, task_type)
+                continue
+            if any(re.match(pattern, task_name) for pattern in [".*逛逛.*", "浏览.*s"]):
+                if await self.task_commit_pre(
+                        {
+                            "taskId": task_id,
+                            "taskType": int(task_type),
+                            "btd": btd
+                        }
+                ):
+                    await asyncio.sleep(16)
                     await self.submit_task_completion_status(
                         {
                             "taskId": task_id,
-                            "taskType": str(task_type),
+                            "taskType": int(task_type),
+                            "activityType": None,
+                            "activityId": None,
+                            "taskSetId": None,
+                            "venueCode": None,
+                            "venueUnitStyle": None,
+                            "taskScene": None,
                             "btd": btd
                         }
                     )
                     await self.receive_task_reward(classify, task_id, task_type)
                     continue
-                if any(re.match(pattern, task_name) for pattern in [".*逛逛.*", "浏览.*s"]):
+            if any(re.match(pattern, task_name) for pattern in [".*晒图.*"]):
+                if await self.task_commit_pre(
+                        {
+                            "taskId": task_id,
+                            "taskType": int(task_type)
+                        }
+                ):
+                    await asyncio.sleep(16)
+                    await self.submit_task_completion_status(
+                        {
+                            "taskId": task_id,
+                            "taskType": int(task_type),
+                            "activityType": None,
+                            "activityId": None,
+                            "taskSetId": None,
+                            "venueCode": None,
+                            "venueUnitStyle": None,
+                            "taskScene": None
+                        }
+                    )
+                    await self.receive_task_reward(classify, task_id, task_type)
+                    continue
+            if task_name == "完成五次浇灌":
+                count = task_dict.get("total") - task_dict.get("curStep")
+                if await self.get_droplet_number() < (self.waterting_g * count):
+                    fn_print(f"用户【{self.user_name}】，===当前水滴不足以完成任务，下次来完成任务吧！===")
+                    continue
+                for _ in range(count):
+                    await asyncio.sleep(0.5)
+                    if not await self.waterting():
+                        break
+                else:
+                    if await self.submit_task_completion_status(
+                            {
+                                "taskId": task_dict.get("taskId"),
+                                "taskType": str(task_dict.get("taskType"))
+                            }
+                    ):
+                        await self.receive_task_reward(classify, task_id, task_type)
+                        continue
+            if any(re.match(pattern, task_name) for pattern in [".*专场", ".*水滴大放送"]):
+                if await self.task_obtain(task_id, task_type):
                     if await self.task_commit_pre(
                             {
                                 "taskId": task_id,
-                                "taskType": str(task_type),
-                                "btd": btd
+                                "taskType": 16
                             }
                     ):
                         await asyncio.sleep(16)
                         await self.submit_task_completion_status(
                             {
                                 "taskId": task_id,
-                                "taskType": str(task_type),
-                                "activityType": None,
-                                "activityId": None,
-                                "taskSetId": None,
-                                "venueCode": None,
-                                "venueUnitStyle": None,
-                                "taskScene": None,
-                                "btd": btd
+                                "taskType": int(task_type)
                             }
                         )
                         await self.receive_task_reward(classify, task_id, task_type)
                         continue
-                if any(re.match(pattern, task_name) for pattern in [".*晒图.*"]):
-                    if await self.task_commit_pre(
-                            {
-                                "taskId": task_id,
-                                "taskType": str(task_type)
-                            }
-                    ):
-                        await asyncio.sleep(16)
-                        await self.submit_task_completion_status(
-                            {
-                                "taskId": task_id,
-                                "taskType": str(task_type),
-                                "activityType": None,
-                                "activityId": None,
-                                "taskSetId": None,
-                                "venueCode": None,
-                                "venueUnitStyle": None,
-                                "taskScene": None
-                            }
-                        )
-                        await self.receive_task_reward(classify, task_id, task_type)
-                        continue
-                if task_name == "完成五次浇灌":
-                    count = task_dict.get("total") - task_dict.get("curStep")
-                    if await self.get_droplet_number() < (self.waterting_g * count):
-                        fn_print(f"用户【{self.user_name}】，===当前水滴不足以完成任务，下次来完成任务吧！===")
-                        continue
-                    for _ in range(count):
-                        await asyncio.sleep(0.5)
-                        if not await self.waterting():
-                            break
-                    else:
-                        if await self.submit_task_completion_status(
-                                {
-                                    "taskId": task_dict.get("taskId"),
-                                    "taskType": str(task_dict.get("taskType"))
-                                }
-                        ):
-                            await self.receive_task_reward(classify, task_id, task_type)
-                            continue
-                if any(re.match(pattern, task_name) for pattern in [".*专场", ".*水滴大放送"]):
-                    if await self.task_obtain(task_id, task_type):
-                        if await self.task_commit_pre(
-                                {
-                                    "taskId": task_id,
-                                    "taskType": 16
-                                }
-                        ):
-                            await asyncio.sleep(16)
-                            await self.submit_task_completion_status(
-                                {
-                                    "taskId": task_id,
-                                    "taskType": str(task_type)
-                                }
-                            )
-                            await self.receive_task_reward(classify, task_id, task_type)
-                            continue
-                fn_print(f"该任务暂时无法处理，请提交日志给作者！{task_dict}")
+            fn_print(f"该任务暂时无法处理，请提交日志给作者！{task_dict}")
 
     async def execute_cumulative_task(self):
         """
@@ -1107,7 +1106,7 @@ class DeWu:
         await self.get_user_info()
         name, level = await self.tree_info()
         droplet_number = await self.get_droplet_number()
-        if not (name and level and droplet_number):
+        if not (name and level and droplet_number >= 0):
             fn_print("请求数据异常！")
             return
         fn_print(f"用户【{self.user_name}】，===当前水滴数：{droplet_number}===")
