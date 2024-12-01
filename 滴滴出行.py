@@ -11,7 +11,6 @@ DD_TOKENS： 滴滴出行进入福利页面抓token值
 """
 import asyncio
 import datetime
-from datetime import datetime
 import httpx
 
 from fn_print import fn_print
@@ -678,4 +677,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-    send_notification_message_collection("滴滴出行通知 - {}".format(datetime.now().strftime("%Y/%m/%d")))
+    send_notification_message_collection("滴滴出行通知 - {}".format(datetime.datetime.now().strftime("%Y/%m/%d")))
