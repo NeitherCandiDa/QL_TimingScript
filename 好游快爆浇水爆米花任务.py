@@ -286,7 +286,7 @@ class HaoYouKuaiBao:
             if daily_yuyue_ling_response["key"] == "ok":
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
             else:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 奖励领取失败❌")
+                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 奖励领取失败❌, {daily_yuyue_ling_response}")
         except Exception as e:
             fn_print(f"={self.user_name}=, 领取预约游戏任务奖励异常：", e)
 
