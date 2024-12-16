@@ -68,6 +68,11 @@ class DiDi:
         )
         if get_weibo_payments_response.status_code == 200:
             get_info_data = get_weibo_payments_response.json()
+            if "token error" in get_info_data.get("errmsg") and get_info_data.get("errno") == 20001:
+                fn_print("token已过期，请重新获取token")
+                send_notification_message_collection(
+                    "滴滴出行通知 - {}".format(datetime.datetime.now().strftime("%Y/%m/%d")))
+                exit()
             return get_info_data['data']['balance']
         else:
             fn_print(f"===获取用户福利金请求异常, {get_weibo_payments_response.text}===")
