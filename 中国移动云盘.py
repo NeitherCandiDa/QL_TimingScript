@@ -6,7 +6,7 @@
 # corn: 0 0 8,16,20 * * *
 # const $ = new Env('中国移动云盘');
 """
-设置环境变量，ydyp_ck，格式 Basic XXXXXXXX#手机号#token#rekey#Os_SSo_Sid
+设置环境变量，ydyp_ck，格式 Basic XXXXXXXX#手机号#token
 多个账号用@分割
 """
 import asyncio
@@ -21,17 +21,12 @@ import httpx
 import requests
 
 from fn_print import fn_print
+from get_env import get_env
 from sendNotify import send_notification_message_collection
-
-
 
 ua = "Mozilla/5.0 (Linux; Android 11; M2012K10C Build/RP1A.200720.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/90.0.4430.210 Mobile Safari/537.36 MCloudApp/10.0.1"
 
-if 'ydyp_ck' in os.environ:
-    ydyp_ck = re.split("@", os.environ.get("ydyp_ck"))
-else:
-    ydyp_ck = []
-    fn_print("未查找到ydyp_ck变量.")
+ydyp_ck = get_env("ydyp_ck", "@")
 
 
 class MobileCloudDisk:
@@ -40,7 +35,7 @@ class MobileCloudDisk:
         self.notebook_id = None
         self.note_token = None
         self.note_auth = None
-        self.click_num = 15  # 定义抽奖次数和摇一摇戳一戳次数
+        self.click_num = 15  # 定义抽奖次数和抽抽乐-享好礼戳一戳次数
         self.draw = 1  # 定义抽奖次数，首次免费
         self.timestamp = str(int(round(time.time() * 1000)))
         self.cookies = {'sensors_stay_time': self.timestamp}
@@ -48,8 +43,8 @@ class MobileCloudDisk:
         self.account = cookie.split("#")[1]
         self.auth_token = cookie.split("#")[2]
         self.encrypt_account = self.account[:3] + "*" * 4 + self.account[7:]
-        self.rmkey = cookie.split("#")[3]
-        self.Os_SSo_Sid = cookie.split("#")[4]
+        # self.rmkey = cookie.split("#")[3]
+        # self.Os_SSo_Sid = cookie.split("#")[4]
         self.fruit_url = 'https://happy.mail.10086.cn/jsp/cn/garden/'
         self.JwtHeaders = {
             'User-Agent': ua,
@@ -368,7 +363,7 @@ class MobileCloudDisk:
 
     async def shake(self):
         """
-        摇一摇
+        抽抽乐-享好礼
         :return: 
         """
         successful_shake = 0
@@ -384,16 +379,16 @@ class MobileCloudDisk:
                     await asyncio.sleep(1)
                     shake_prize_config = shake_response_data["result"].get("shakePrizeConfig")
                     if shake_prize_config:
-                        fn_print(f"用户【{self.account}】，===摇一摇成功✅✅===, 获得：{shake_prize_config['name']}🎉🎉")
+                        fn_print(f"用户【{self.account}】，===抽抽乐-享好礼抽奖成功✅✅===, 获得：{shake_prize_config['name']}🎉🎉")
                         successful_shake += 1
                     else:
-                        fn_print(f"摇一摇未中奖，{shake_response_data}")
+                        fn_print(f"抽抽乐-享好礼抽奖未中奖")
                 else:
-                    fn_print(f"摇一摇发生异常：{responses.status_code}")
+                    fn_print(f"抽抽乐-享好礼抽奖发生异常：{responses.status_code}")
         except Exception as e:
-            fn_print(f"摇一摇执行异常：{e}")
+            fn_print(f"抽抽乐-享好礼执行异常：{e}")
         if successful_shake == 0:
-            fn_print(f"用户【{self.account}】，===未摇中 x {self.click_num}❌===")
+            fn_print(f"用户【{self.account}】，===未抽中 x {self.click_num}❌===")
 
     async def surplus_num(self):
         """
@@ -464,7 +459,7 @@ class MobileCloudDisk:
                 do_login_data = do_login_response.json()
                 if do_login_data.get('result', {}).get('islogin') != 1:
                     fn_print(f"用户【{self.account}】，===果园专区登录失败❌===")
-                    return 
+                    return
                 await self.fruit_task()
             else:
                 fn_print(f"果园专区登录请求发生异常：{do_login_response.status_code}")
@@ -645,6 +640,7 @@ class MobileCloudDisk:
         else:
             fn_print(f"查询果园信息请求发生异常：{tree_info_responses.status_code}")
 
+
     async def cloud_game(self):
         """
         云朵大作战
@@ -754,6 +750,8 @@ class MobileCloudDisk:
                 )
                 if cur_response.status_code == 200:
                     cur_data = cur_response.json()
+                    if isinstance(cur_data.get('result'), int):
+                        fn_print(f"异常：{cur_data.get('result')}")
                     fn_print(f"用户【{self.account}】，===获得云朵数量：{cur_data.get('result').get('result')}===")
                 else:
                     fn_print(f"用户【{self.account}】，===获取云朵数量请求失败❌，{cur_response.status_code}===")
@@ -959,6 +957,12 @@ class MobileCloudDisk:
         note_id = ''.join(random.choice(characters) for _ in range(length))
         return note_id
 
+    async def get_redeemable_reward_list(self):
+        """
+        获取可兑换奖励
+        :return: 
+        """
+
     async def run(self):
         if await self.jwt():
             fn_print("=========开始签到=========")
@@ -968,8 +972,8 @@ class MobileCloudDisk:
             await self.get_task_list(url="sign_in_3", app_type="cloud_app")
             fn_print("=========开始执行☁️云朵大作战=========")
             await self.cloud_game()
-            fn_print("=========开始执行🌳果园任务=========")
-            await self.fruit_login()
+            # fn_print("=========开始执行🌳果园任务=========")
+            # await self.fruit_login()
             fn_print("=========开始执行📝公众号任务=========")
             await self.wx_app_sign()
             await self.shake()
