@@ -15,13 +15,10 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 from fn_print import fn_print
+from get_env import get_env
 from sendNotify import send_notification_message_collection
 
-if 'Hykb_cookie' in os.environ:
-    Hykb_cookie = re.split("@", os.environ.get("Hykb_cookie"))
-else:
-    Hykb_cookie = []
-    print("未查找到Hykb_cookie变量.")
+Hykb_cookie = get_env("HYKB_COOKIE", "@")
 
 
 class HaoYouKuaiBao:
@@ -206,7 +203,7 @@ class HaoYouKuaiBao:
         for task_item in task_list:
             tasks_infos = task_item.select_one("dl")
             id_param = tasks_infos.select_one("dd")["class"][0]
-            title_param = tasks_infos.select_one("dt").get_text()
+            title_param = tasks_infos.select_one("dt").get_text() if "：" in tasks_infos.select_one("dt").get_text() else tasks_infos.select_one("dt").get_text().replace(":", "：")[0]
             reward_param = tasks_infos.select_one("dd").get_text()
             if "分享福利" in title_param or "分享资讯" in title_param:
                 self.recommend_task_list.append(
