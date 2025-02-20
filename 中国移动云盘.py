@@ -31,7 +31,7 @@ ydyp_ck = get_env("ydyp_ck", "@")
 
 class MobileCloudDisk:
     def __init__(self, cookie):
-        self.client = httpx.AsyncClient(verify=False)
+        self.client = httpx.AsyncClient(verify=False, timeout=60)
         self.notebook_id = None
         self.note_token = None
         self.note_auth = None
