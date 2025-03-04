@@ -9,21 +9,11 @@ from datetime import datetime
 
 import httpx
 
-if 'pz_account' in os.environ:
-    pz_account = re.split("@|&", os.environ.get("pz_account"))
-    print(f"查找到{len(pz_account)}个账号")
-else:
-    pz_account = []
-    print("未查找到pz_account变量.")
+from fn_print import fn_print
+from get_env import get_env
+from sendNotify import send_notification_message_collection
 
-
-def send_notification_message(title, content):
-    try:
-        from sendNotify import dingding_bot
-        dingding_bot(title, content)
-    except Exception as e:
-        if e:
-            print("发送通知消息失败")
+pz_account = get_env("pz_account", "@")
 
 
 class PzSignIn:
@@ -42,14 +32,14 @@ class PzSignIn:
             )
             response_json = response.json()
         except Exception as e:
-            print(e)
-            print(response.text)
+            fn_print(e)
+            fn_print(response.text)
         token = response_json["data"]['token']
         if token is not None:
-            print("=" * 30 + f"登录成功，开始执行签到" + "=" * 30)
+            fn_print("=" * 30 + f"登录成功，开始执行签到" + "=" * 30)
             self.client.headers["Authorization"] = "Bearer " + token
         else:
-            print("登录失败")
+            fn_print("登录失败")
             exit()
 
     def get_balance(self):
@@ -71,19 +61,17 @@ class PzSignIn:
             "/home/userWallet-receive"
         ).json()
         if response["status"] == 200 and response['data'] == '领取成功':
-            print("签到成功")
-            print("=" * 100)
+            fn_print("签到成功")
+            fn_print("=" * 100)
             balance = self.get_balance()
-            send_notification_message(title="品赞代理签到通知 - " + datetime.now().strftime("%Y/%m/%d"),
-                                      content="签到成功，当前账户余额： " + balance)
+            fn_print("当前账户余额： " + balance)
         elif response["code"] == -1:
             balance = self.get_balance()
-            print(response["message"])
-            send_notification_message(title="品赞代理签到通知 - " + datetime.now().strftime("%Y/%m/%d"),
-                                      content=f"签到失败，{response['message']}\n当前账户余额：{balance}")
+            fn_print(response["message"])
+            fn_print(f"签到失败，{response['message']}\n当前账户余额：{balance}")
         else:
-            print("签到失败！")
-            print(response)
+            fn_print("签到失败！")
+            fn_print(response) 
 
 
 if __name__ == '__main__':
@@ -91,3 +79,4 @@ if __name__ == '__main__':
         pz = PzSignIn(i)
         pz.sign_in()
         del pz
+    send_notification_message_collection("品赞代理签到通知 - " + datetime.now().strftime("%Y/%m/%d"))
