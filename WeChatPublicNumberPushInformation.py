@@ -11,6 +11,8 @@ import time
 import httpx
 from typing import Text, Optional, List, Dict
 
+from fn_print import fn_print
+from sendNotify import send_notification_message_collection
 
 """
 公众号推送模版：
@@ -42,11 +44,11 @@ CONFIG = {
     "TEMPLATE_ID": "",       # 模板ID
     "CITY_NAME": "",         # 城市
     "AREA": "",              # 区县
-    "EXAMINATION_DATE": "",  # 考研日期
+    "EXAMINATION_DATE": "",  # 考研日期（xx-xx）
     "USER": "",              # 对象称呼
-    "BIRTHDAY": "",          # 对象生日
-    "STAR_SIGN": "",         # 对象星座
-    "LOVE_DATE": ""          # 恋爱开始日期
+    "BIRTHDAY": "",          # 对象生日（xx-xx)
+    "STAR_SIGN": "",         # 对象星座（xx座）
+    "LOVE_DATE": ""          # 恋爱开始日期（xxxx-xx-xx）
 }
 
 # 从环境变量中获取配置，如果环境变量不存在则使用默认值
@@ -74,7 +76,7 @@ def time_diff(time1: Text, time2: Text, format) -> int:
     if time2 > time1:
         return (time2 - time1).days
     else:
-        print("时间1大于时间2, 请检查")
+        fn_print("时间1大于时间2, 请检查")
 
 
 def calculate_birthday(birthday: Text) -> int:
@@ -189,35 +191,6 @@ class WeChatPushMessage:
         color_list = get_colors(100)
         return random.choice(color_list)
 
-    def send_email(self, subject, contents):
-        """
-        发送邮件
-        :param subject: 邮件主题
-        :param message: 邮件内容
-        :return: 
-        """
-        import yagmail
-        # 配置
-        sender_name = "微信消息推送"
-        sender_email = "liulong3men@163.com"
-        sender_password = "XUJFCMOZOXZUWMTT"
-        receiver_email = "1873190160@qq.com"
-
-        # 发送邮件
-        try:
-            # 创建 yagmail 客户端
-            yag = yagmail.SMTP({sender_email: sender_name}, password=sender_password, host="smtp.163.com", port=465)
-
-            # 发送邮件
-            yag.send(
-                to=receiver_email,
-                subject=subject,
-                contents=contents
-            )
-            print("邮件发送成功！")
-        except Exception as e:
-            print(f"邮件发送失败：{str(e)}")
-
     @staticmethod
     def split_str(str_: Text, length: int = 20):
         chunks = [str_[i:i + length] for i in range(0, len(str_), length)]
@@ -312,15 +285,12 @@ class WeChatPushMessage:
         try:
             response = self.client.post(url, json=messages).json()
             if response.get("errcode") == 0 and response.get("errmsg") == "ok":
-                print("推送成功")
-                # self.send_email(subject=f"🗨️微信公众号通知 - {datetime.datetime.now().strftime("%Y/%m/%d")}",
-                #                 contents=f"⏰向【{config.get('user')}】早安信息已成功推送啦！")
+                fn_print(f"⏰向【{USER}】早安信息已成功推送啦！")
             else:
-                print("推送失败", response)
-                # self.send_email(subject=f"🗨️微信公众号通知 - {datetime.datetime.now().strftime("%Y/%m/%d")}",
-                #                 contents=f"❌向【{config.get('user')}】早安信息推送失败，请前往青龙面板查看日志！")
-
+                fn_print(f"❌向【{USER}】早安信息推送失败")
+                fn_print(f"错误信息： {response}")
         except KeyError:
+            fn_print("推送失败，请检查参数是否正确")
             raise KeyError("推送失败，请检查参数是否正确")
 
 
@@ -329,3 +299,4 @@ if __name__ == '__main__':
         wpm = WeChatPushMessage()
         wpm.push_message(user)
         del wpm
+    send_notification_message_collection(f"🗨️微信公众号通知 - {datetime.datetime.now().strftime('%Y/%m/%d')}")
