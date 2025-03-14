@@ -10,6 +10,7 @@
 多个账号用@分割
 """
 import asyncio
+import json
 import os
 import random
 import re
@@ -27,6 +28,9 @@ from sendNotify import send_notification_message_collection
 ua = "Mozilla/5.0 (Linux; Android 11; M2012K10C Build/RP1A.200720.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/90.0.4430.210 Mobile Safari/537.36 MCloudApp/10.0.1"
 
 ydyp_ck = get_env("ydyp_ck", "@")
+
+is_redeem = False  # 是否兑换
+redeem_reward_description = ""  # 兑换的奖品描述，比如哔哩哔哩会员月卡、网易云音乐月卡、移动云盘钻石会员季卡
 
 
 class MobileCloudDisk:
@@ -379,7 +383,8 @@ class MobileCloudDisk:
                     await asyncio.sleep(1)
                     shake_prize_config = shake_response_data["result"].get("shakePrizeConfig")
                     if shake_prize_config:
-                        fn_print(f"用户【{self.account}】，===抽抽乐-享好礼抽奖成功✅✅===, 获得：{shake_prize_config['name']}🎉🎉")
+                        fn_print(
+                            f"用户【{self.account}】，===抽抽乐-享好礼抽奖成功✅✅===, 获得：{shake_prize_config['name']}🎉🎉")
                         successful_shake += 1
                     else:
                         fn_print(f"抽抽乐-享好礼抽奖未中奖")
@@ -639,7 +644,6 @@ class MobileCloudDisk:
                     fn_print(f"用户【{self.account}】，===水滴不足，无法浇水❌===")
         else:
             fn_print(f"查询果园信息请求发生异常：{tree_info_responses.status_code}")
-
 
     async def cloud_game(self):
         """
@@ -962,6 +966,60 @@ class MobileCloudDisk:
         获取可兑换奖励
         :return: 
         """
+        url = "https://mrp.mcloud.139.com/market/signin/page/exchangeList?client=app&clientVersion=11.4.4"
+        try:
+            response = await self.client.get(
+                url=url,
+                headers=self.JwtHeaders,
+                cookies=self.cookies
+            )
+            if response.status_code == 200:
+                reward_data = response.json()
+                # print(json.dumps(reward_data, indent=4, ensure_ascii=False))
+                if reward_data.get("msg") == "success":
+                    reward_type_datas: dict[dict[list[dict]]] = reward_data.get("result", {})
+                    # print(json.dumps(reward_type_list, indent=4, ensure_ascii=False))
+                    reward_type_list = list(reward_type_datas.keys())
+                    # print(reward_type_list)
+                    reward_list = []
+                    for reward_type_key in reward_type_list:
+                        for reward_data in reward_type_datas.get(reward_type_key):
+                            # print(reward_data)
+                            oid = reward_data.get("oid")
+                            msg = f"{reward_data.get('prizeName')} - 兑换所需云朵: {reward_data.get('pOrder')} - 是否可兑换: {'是' if reward_data.get('dailyRemainderCount') != 0 else '否'}"
+                            fn_print(msg)
+                            reward_list.append({"oid": oid, "prizeName": reward_data.get("prizeName")})
+                    return reward_list
+            else:
+                fn_print(f"获取可兑换奖励错误：{response.text}")
+        except Exception as e:
+            fn_print(f"获取可兑换奖励请求发生异常：{e}")
+
+    async def redeem_reward(self, oid):
+        """
+        兑换奖励
+        :param oid: 奖励的id
+        :return:
+        """
+        url = f"https://mrp.mcloud.139.com/market/signin/page/exchange?prizeId={oid}&client=app&clientVersion=11.4.4&smsCode"
+        try:
+            response = await self.client.get(
+                url=url,
+                headers=self.JwtHeaders,
+                cookies=self.cookies
+            )
+            if response.status_code == 200:
+                reward_data = response.json()
+                if reward_data.get("code") == 0:
+                    fn_print(f"✅兑换奖励成功：{reward_data.get('msg')}")
+                elif reward_data.get("code") == 2301:
+                    fn_print(f"❌兑换奖励失败！{reward_data.get('msg')}")
+                else:
+                    fn_print(f"❌兑换奖励失败！{reward_data.get('msg')}")
+            else:
+                fn_print(f"❌兑换奖励请求错误：{response.text}")
+        except Exception as e:
+            fn_print(f"❌兑换奖励请求发生异常：{e}")
 
     async def run(self):
         if await self.jwt():
@@ -984,6 +1042,20 @@ class MobileCloudDisk:
             fn_print("=========开始执行📮139邮箱任务=========")
             await self.get_task_list(url="newsign_139mail", app_type="email_app")
             await self.receive()
+            reward_list = await self.get_redeemable_reward_list()
+            if is_redeem and reward_list:
+                fn_print("=========开始🎁兑换奖励=========")
+                found = False
+                for reward in reward_list:
+                    if reward.get("prizeName") == redeem_reward_description:
+                        oid = reward.get("oid")
+                        if oid:
+                            await self.redeem_reward(oid)
+                            found = True
+                            break
+                if not found:
+                    fn_print(f"❌未找到你想要兑换的奖品，请检查奖品名称是否正确")
+
         else:
             fn_print("token失效")
 
