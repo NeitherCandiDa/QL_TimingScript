@@ -22,6 +22,7 @@ from datetime import datetime
 import httpx
 from fn_print import fn_print
 from get_env import get_env
+from sendNotify import send_notification_message_collection
 
 sfsy_tokens = get_env("sfsy_url", "\n")
 
@@ -1729,3 +1730,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+    send_notification_message_collection(f"顺丰速运签到通知 - {datetime.now().strftime('%Y/%m/%d')}")
