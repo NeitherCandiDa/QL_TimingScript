@@ -39,7 +39,7 @@
 
 # Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=NeitherCandiDa/QL_TimingScript&type=Date)](https://star-history.com/#NeitherCandiDa/QL_TimingScript&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=NeitherCandiDa/QL_TimingScript&type=Date)](https://www.star-history.com/#NeitherCandiDa/QL_TimingScript&Date)
 
 # 特别声明
 
