@@ -1,6 +1,17 @@
+# 工作繁忙，有缘更新！！！
+
+访问量![Visitor Count](https://profile-counter.glitch.me/NeitherCandiDa-QL_TimingScript/count.svg)
+
+# 青龙拉取
+
+订阅管理->创建订阅->保存
+
+# 安装依赖
+
+依赖管理->Python3->创建依赖
+
+
 # 已完成
-
-
 
 |                  |                                      | 是否可用 |
 | :--------------- | :----------------------------------: | :------: |
@@ -15,7 +26,14 @@
 | 浓五的酒馆       |            浓五的酒馆.py             |    ✅     |
 | 顺丰速运         |               sfsy.py                |    ✅     |
 
+# 其他
 
+脚本的变量设置，以WeChatPublicNumberPushInformation.py为例：
+> 环境变量->创建变量 变量名以脚本内要求为准
+
+# Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=NeitherCandiDa/QL_TimingScript&type=Date)](https://star-history.com/#NeitherCandiDa/QL_TimingScript&Date)
 
 # 特别声明
 
