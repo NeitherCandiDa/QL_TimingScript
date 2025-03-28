@@ -5,11 +5,15 @@
 # 青龙拉取
 
 订阅管理->创建订阅->保存
+> 拉取链接：https://gitee.com/liu-long068/QL_TimingScript.git
+
+![输入图片说明](.idea/inspectionProfiles/image.png)
 
 # 安装依赖
 
 依赖管理->Python3->创建依赖
 
+![输入图片说明](.idea/inspectionProfiles/image2.png)
 
 # 已完成
 
@@ -30,6 +34,8 @@
 
 脚本的变量设置，以WeChatPublicNumberPushInformation.py为例：
 > 环境变量->创建变量 变量名以脚本内要求为准
+
+![输入图片说明](.idea/inspectionProfiles/image3.png)
 
 # Star History
 
