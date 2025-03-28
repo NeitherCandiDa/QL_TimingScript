@@ -4,7 +4,7 @@
 # @author           Echo
 # @EditTime         2024/11/27
 # const $ = new Env('滴滴出行')
-# cron "0 8,14,17 * * *"
+# cron: "0 8,14,17 * * *"
 """
 DD_TOKENS： 滴滴出行进入福利页面抓token值
 自行配经纬度和城市id
