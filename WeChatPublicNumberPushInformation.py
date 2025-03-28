@@ -3,6 +3,8 @@
 # @fileName         WeChatPublicNumberPushInformation.py
 # @author           Echo
 # @EditTime         2024/9/14
+# cron: 0 0 7 * * *
+# const $ = new Env('微信公众号推送信息');
 import datetime
 import os
 import random

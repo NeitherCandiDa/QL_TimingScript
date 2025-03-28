@@ -3,6 +3,8 @@
 # @fileName         pzSignIn.py
 # @author           Echo
 # @EditTime         2024/9/13
+# const $ = new Env('品赞代理签到');
+# cron: 0 0 9 * * 1
 import os
 import re
 from datetime import datetime

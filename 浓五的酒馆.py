@@ -4,6 +4,7 @@
 # @author           Echo
 # @EditTime         2025/3/15
 # const $ = new Env('浓五的酒馆');
+# cron: 0 0 10 * * *
 """
 开启抓包进入‘浓五的酒馆’小程序，抓取authorization，不要带Bearer
 变量格式： nwjg_token，多个账号用@隔开

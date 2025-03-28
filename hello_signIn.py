@@ -3,6 +3,8 @@
 # @fileName         hello_signIn.py
 # @author           Echo
 # @EditTime         2024/9/23
+# cron: 0 0 10 * * *
+# const $ = new Env('哈啰出行);
 import asyncio
 import os
 import re
