@@ -3,7 +3,7 @@
 # @fileName         中国移动云盘.py
 # @author           Echo
 # @EditTime         2024/11/4
-# corn: 0 0 8,16,20 * * *
+# cron: 0 0 8 * * *
 # const $ = new Env('中国移动云盘');
 """
 设置环境变量，ydyp_ck，格式 Basic XXXXXXXX#手机号#token

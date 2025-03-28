@@ -1,6 +1,6 @@
 """
 变量Hykb_cookie
-corn: 0 0 0,12 * * *
+cron: 0 0 0,12 * * *
 const $ = new Env('好游快爆');
 """
 import asyncio
