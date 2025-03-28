@@ -3,7 +3,7 @@
 # @fileName         tclx.py
 # @author           Echo
 # @EditTime         2025/3/14
-# corn: 0 9 * * *
+# cron: 0 0 9 * * *
 # const $ = new Env('同程旅游');
 """
 开启抓包，进入app 进入‘领福利’界面，点击签到，查看https://app.17u.cn/welfarecenter/index/signIndex请求头
