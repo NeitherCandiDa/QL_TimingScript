@@ -15,13 +15,10 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 from fn_print import fn_print
+from get_env import get_env
 from sendNotify import send_notification_message_collection
 
-if 'Hykb_cookie' in os.environ:
-    Hykb_cookie = re.split("@", os.environ.get("Hykb_cookie"))
-else:
-    Hykb_cookie = []
-    print("未查找到Hykb_cookie变量.")
+Hykb_cookie = get_env("Hykb_cookie", "@")
 
 
 class HaoYouKuaiBao:
@@ -212,8 +209,8 @@ class HaoYouKuaiBao:
                 self.recommend_task_list.append(
                     {
                         "bmh_task_id": re.search(r"daily_dd_(.+)", id_param).group(1),
-                        "bmh_task_title": re.search(r"分享福利：(.*)", title_param).group(
-                            1) if "分享福利" in title_param else re.search(r"分享资讯：(.*)", title_param).group(1),
+                        "bmh_task_title": re.search(r"分享福利[：:](.*)", title_param).group(
+                            1) if "分享福利" in title_param else re.search(r"分享资讯[：:](.*)", title_param).group(1),
                         "reward_num": re.search(r"可得+(.+)", reward_param).group(1)
                     }
                 )
