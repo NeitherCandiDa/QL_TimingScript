@@ -9,6 +9,9 @@
 开启抓包进入‘浓五的酒馆’小程序，抓取authorization，不要带Bearer
 变量格式： nwjg_token，多个账号用@隔开
 """
+import json
+import re
+
 import httpx
 
 from fn_print import fn_print
@@ -34,6 +37,39 @@ class Nwjg:
             'accept-language': 'zh-CN,zh;q=0.9',
             'Authorization': f'Bearer {self.token}'
         }
+        self.promotion_id = self.get_promotion_id()
+
+    def get_promotion_id(self):
+        try:
+            response = self.client.post(
+                url="https://stdcrm.dtmiller.com/scrm-promotion-service/mini/module/config/list",
+                headers=self.headers,
+            )
+            if response.status_code != 200:
+                fn_print(f"获取活动ID失败: HTTP {response.status_code} - {response.text}")
+                return None
+
+            response_data = response.json()
+            detailList = response_data['data'][1]['detailList']
+
+            for item in detailList:
+                detail_json = json.loads(item['detailJson'])
+                if detail_json['title'] == '每日签到':
+                    page_path = detail_json['jumpData']['pagePath']
+                    return re.search(r'promotionId=([^&]*)', page_path).group(1)
+
+            fn_print("未找到每日签到活动")
+            return None
+
+        except json.JSONDecodeError:
+            fn_print("获取活动ID失败: 响应不是有效的JSON格式")
+            return None
+        except KeyError as e:
+            fn_print(f"获取活动ID失败: 响应缺少必要字段 - {str(e)}")
+            return None
+        except Exception as e:
+            fn_print(f"获取活动ID发生异常: {type(e).__name__} - {str(e)}")
+            return None
 
     def sign(self):
         self.get_integral()
@@ -42,7 +78,7 @@ class Nwjg:
                 url="https://stdcrm.dtmiller.com/scrm-promotion-service/promotion/sign/today",
                 headers=self.headers,
                 params={
-                    "promotionId": "PI67c25977540856000aac6ac0"
+                    "promotionId": self.promotion_id
                 }
             )
             if response.status_code == 200:
