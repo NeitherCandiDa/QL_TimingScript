@@ -11,11 +11,13 @@
 """
 import json
 import re
+from datetime import datetime
 
 import httpx
 
 from fn_print import fn_print
 from get_env import get_env
+from sendNotify import send_notification_message_collection
 
 nwjg_tokens = get_env("nwjg_token", "@")
 
@@ -50,6 +52,9 @@ class Nwjg:
                 return None
 
             response_data = response.json()
+            if "JWT expired" in response_data.get('msg'):
+                fn_print("获取活动ID失败: token已过期！")
+                return None
             detailList = response_data['data'][1]['detailList']
 
             for item in detailList:
@@ -72,6 +77,8 @@ class Nwjg:
             return None
 
     def sign(self):
+        if not self.promotion_id:
+            return 
         self.get_integral()
         try:
             response = self.client.get(
@@ -113,3 +120,4 @@ if __name__ == '__main__':
     for token in nwjg_tokens:
         nwjg = Nwjg(token)
         nwjg.sign()
+    send_notification_message_collection(f"浓五的酒馆签到通知 - {datetime.now().strftime('%Y/%m/%d')}")
