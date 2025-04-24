@@ -52,7 +52,7 @@ class Nwjg:
                 return None
 
             response_data = response.json()
-            if "JWT expired" in response_data.get('msg'):
+            if response_data.get('msg', None) is not None and "JWT expired" in response_data.get('msg'):
                 fn_print("获取活动ID失败: token已过期！")
                 return None
             detailList = response_data['data'][1]['detailList']
