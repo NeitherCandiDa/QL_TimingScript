@@ -35,12 +35,7 @@ class Oppo:
         self.user_agent = user_agent
         self.oppo_list = re.split(r'[\n&]', cookie) if cookie else []
         self.level = self.validate_level(LEVEL[0])
-        self.sign_in_days_map = {
-            1327: 3,  # 3天签到领取
-            1328: 5,  # 5天签到领取
-            1329: 10,  # 10天签到领取
-            1330: 15  # 15天签到领取
-        }
+        self.sign_in_days_map = {}
         headers = {
             'User-Agent': self.user_agent,
             'Accept-Encoding': 'gzip, deflate',
@@ -51,6 +46,20 @@ class Oppo:
         self.client = httpx.Client(base_url="https://hd.opposhop.cn", verify=False, headers=headers, timeout=60)
         self.activity_id = None
         self.sign_in_map = {}
+
+    def get_sign_in_detail(self):
+        """ 获取累计签到天数信息 """
+        response = self.client.get(
+            url=f"/api/cn/oapi/marketing/cumulativeSignIn/getSignInDetail?activityId={self.sign_in_map.get(self.level)}"
+        )
+        response.raise_for_status()
+        data = response.json()
+        if data.get('code') == 200 and data.get('data').get('cumulativeAwards'):
+            cumulative_awards: list = data.get('data').get('cumulativeAwards')
+            for cumulative_award in cumulative_awards:
+                self.sign_in_days_map[cumulative_award['awardId']] = cumulative_award['signDayNum']
+        else:
+            fn_print("获取累计签到天数信息失败❌")
 
     def is_login(self):
         """ 检测Cookie是否有效 """
@@ -266,10 +275,11 @@ class Oppo:
 def run(self: Oppo):
     if self.level is None:
         return
-        
+
     self.is_login()
     self.get_user_info()
     self.get_task_activity_info()
+    self.get_sign_in_detail()
     self.sign_in()
     sign_in_days = self.get_sign_days()
     self.get_task_list_ids()
