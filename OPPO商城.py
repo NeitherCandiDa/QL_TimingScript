@@ -7,9 +7,9 @@
 # cron: 0 0 12 * * *
 """
 开启抓包进入‘OPPO商城’app，进入我的 - 签到任务
-三个变量： 
-oppo_cookie，抓包https://hd.opposhop.cn请求头中的 Cookie，整个Cookie都放进来。多个账号用@隔开
-oppo_user_agent，请求头的User-Agent
+变量oppo_cookie，抓包https://hd.opposhop.cn请求头中的 Cookie，整个Cookie都放进来 
+oppo_cookie变量格式： Cookie#user_agent#oppo_level   ，多个账号用@隔开
+user_agent，请求头的User-Agent
 oppo_level， 用户等级。值只能定义为 普卡、银卡会员、金钻会员
 """
 
@@ -24,17 +24,15 @@ from get_env import get_env
 from sendNotify import send_notification_message_collection
 
 oppo_cookies = get_env("oppo_cookie", "@")
-USERAGENT = get_env("oppo_user_agent", "#")
-LEVEL = get_env("oppo_level", "#")
 
 
 class Oppo:
-    def __init__(self, cookie, user_agent):
+    def __init__(self, cookie):
         self.user_name = None
-        self.cookie = cookie
-        self.user_agent = user_agent
+        self.cookie = cookie.split("#")[0]
+        self.user_agent = cookie.split("#")[1]
+        self.level = self.validate_level(cookie.split("#")[2])
         self.oppo_list = re.split(r'[\n&]', cookie) if cookie else []
-        self.level = self.validate_level(LEVEL[0])
         self.sign_in_days_map = {}
         headers = {
             'User-Agent': self.user_agent,
@@ -293,7 +291,7 @@ def run(self: Oppo):
 if __name__ == '__main__':
     invalid_level = False
     for cookie in oppo_cookies:
-        oppo = Oppo(cookie, USERAGENT[0])
+        oppo = Oppo(cookie)
         if oppo.level is None:
             invalid_level = True
         else:
