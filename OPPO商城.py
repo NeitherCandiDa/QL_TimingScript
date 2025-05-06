@@ -10,7 +10,7 @@
 三个变量： 
 oppo_cookie，抓包https://hd.opposhop.cn请求头中的 Cookie，整个Cookie都放进来。多个账号用@隔开
 oppo_user_agent，请求头的User-Agent
-oppo_level， 用户等级。值只能定义为 普通、银卡会员、金钻会员
+oppo_level， 用户等级。值只能定义为 普卡、银卡会员、金钻会员
 """
 
 import httpx
