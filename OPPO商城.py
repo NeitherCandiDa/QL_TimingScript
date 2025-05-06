@@ -100,10 +100,9 @@ class Oppo:
                 for cmp in task_cmps:
                     if "SignIn" in cmp:
                         signin_fields.append(cmp)
-                        continue
                     if "Task" in cmp:
                         task_field = cmp
-                        continue
+                        break
                 self.activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
                 for signin_field in signin_fields:
                     if self.level in dsl_json['byId'][signin_field]['attr']['activityInfo']['activityName']:
@@ -189,7 +188,7 @@ class Oppo:
         :param level: 用户输入的会员等级
         :return: 有效的会员等级或None
         """
-        valid_levels = ["普卡", "银卡会员", "金钻会员"]
+        valid_levels = ["普通", "银卡会员", "金钻会员"]
         if level not in valid_levels:
             fn_print(f"❌环境变量oppo_level定义的会员等级无效，只能定义为：{valid_levels}")
             return None
