@@ -12,6 +12,7 @@ oppo_cookie变量格式： Cookie#user_agent#oppo_level   ，多个账号用@隔
 user_agent，请求头的User-Agent
 oppo_level， 用户等级。值只能定义为 普卡、银卡会员、金钻会员
 """
+import random
 
 import httpx
 import json
@@ -120,21 +121,29 @@ class Oppo:
             )
             response.raise_for_status()
             data = response.json()
-            if data.get('data'):
-                task_list = data['data']['taskDTOList']
-                for task in task_list:
-                    # 排除黑卡和购物
-                    if task.get('taskType') == 6:
-                        continue
-                    fn_print(f"开始执行【{task.get('taskName')}】任务")
-                    self.complete_task(task.get('taskName'), task.get('taskId'), task.get('activityId'))
-                    time.sleep(1.5)
-                    self.receive_reward(task.get('taskName'), task.get('taskId'), task.get('activityId'))
-                    time.sleep(1.5)
-            else:
+            if not data.get('data'):
                 fn_print(f"获取任务列表失败！-> {data.get('message')}")
+                return None
+            task_list = data['data']['taskDTOList']
+            for task in task_list:
+                task_type = task.get('taskType')
+                task_name = task.get('taskName')
+                if task_type == 6:  # 黑卡任务
+                    continue
+                fn_print(f"开始处理【{task_name}】任务")
+                if task_type == 3:
+                    goods_num = int(task.get('attachConfigOne', {}).get('goodsNum', 0))
+                    if goods_num > 0:
+                        self.browse_products(goods_num)
+                        time.sleep(1.5)
+                # 执行任务
+                self.complete_task(task_name, task.get('taskId'), task.get('activityId'))
+                time.sleep(1.5)
+                # 领取奖励
+                self.receive_reward(task_name, task.get('taskId'), task.get('activityId'))
+                time.sleep(1.5)
         except Exception as e:
-            fn_print(f"获取活动ID列表时出错: {e}")
+            fn_print(f"获取任务列表时出错: {e}")
         return None
 
     def complete_task(self, task_name, task_id, activity_id):
@@ -226,6 +235,66 @@ class Oppo:
         except Exception as e:
             fn_print(f"❌签到时出错: {e}")
 
+    def browse_products(self, goods_num):
+        sku_ids = [
+            "29539",
+            "26303",
+            "26304",
+            "25171",
+            "25172",
+            "26300",
+            "29547",
+            "29548",
+            "29549",
+            "29542",
+            "29543",
+            "29545",
+            "29540",
+            "29541",
+            "29557",
+            "29553",
+            "29554",
+            "29555",
+            "29550",
+            "29551",
+            "29552",
+            "30025",
+            "29568",
+            "29569",
+            "29565",
+            "29566",
+            "29567",
+            "26298",
+            "29570",
+            "29571",
+            "32581",
+            "32589",
+            "32588",
+            "32587",
+            "32586",
+            "32585",
+            "32584",
+            "32583",
+            "32582",
+            "25662",
+            "25168",
+            "25169",
+            "25167",
+            "25170"
+        ]
+        random.shuffle(sku_ids)
+        for sku_id in sku_ids[:goods_num]:
+            try:
+                response = self.client.get(
+                    url=f"https://msec.opposhop.cn/cms-business/goods/detail?interfaceVersion=v2&pageCode=skuDetail&modelCode=OnePlus%20PJZ110&skuId={sku_id}"
+                )
+                response.raise_for_status()
+                data = response.json()
+                if data.get('code') != 200 and data.get('message'):
+                    fn_print(f"❌浏览商品失败！{data.get('message')}")
+            except Exception as e:
+                fn_print(f"❌浏览商品时出错: {e}")
+
     def get_sign_days(self):
         """ 获取签到天数 """
         try:
@@ -282,10 +351,10 @@ def run(self: Oppo):
     sign_in_days = self.get_sign_days()
     self.get_task_list_ids()
     for award_id, days in self.sign_in_days_map.items():
-        if sign_in_days >= days:
-            self.receive_sign_in_award(award_id=award_id)
-        else:
+        if sign_in_days < days:
             fn_print(f"**{self.user_name}**，未达到累计{days}天签到要求，跳过领取奖励")
+            continue
+        self.receive_sign_in_award(award_id=award_id)
 
 
 if __name__ == '__main__':
