@@ -13,6 +13,7 @@ user_agent，请求头的User-Agent
 oppo_level， 用户等级。值只能定义为 普卡、银卡会员、金钻会员
 """
 import random
+from urllib.parse import urlparse, parse_qs
 
 import httpx
 import json
@@ -235,53 +236,39 @@ class Oppo:
         except Exception as e:
             fn_print(f"❌签到时出错: {e}")
 
+    def get_sku_ids(self):
+        config_response = self.client.get(url="https://msec.opposhop.cn/configs/web/advert/220031")
+        config_response.raise_for_status()
+        if config_response.status_code != 200:
+            fn_print(f"❌获取商品信息失败！{config_response.text}")
+            return []
+        config_data = config_response.json()
+        sku_ids = set()
+        for module in config_data.get('data', []):
+            for detail in module.get('details', []):
+
+                link = detail.get('link', '')
+                if 'skuId=' in link:
+                    parsed_url = urlparse(link)
+                    query_params = parse_qs(parsed_url.query)
+                    sku_id = query_params.get("skuId", [None])[0]
+                    if sku_id:
+                        sku_ids.add(int(sku_id))
+
+                hot_zone = detail.get("hotZone", {})
+                for subscribe in hot_zone.get("hotZoneSubscribe", []):
+                    sku_id = subscribe.get("skuId")
+                    if sku_id:
+                        sku_ids.add(int(sku_id))
+
+                goods_form = detail.get('goodsForm', {})
+                sku_id = goods_form.get('skuId')
+                if sku_id:
+                    sku_ids.add(int(sku_id))
+        return list(sku_ids)
+
     def browse_products(self, goods_num):
-        sku_ids = [
-            "29539",
-            "26303",
-            "26304",
-            "25171",
-            "25172",
-            "26300",
-            "29547",
-            "29548",
-            "29549",
-            "29542",
-            "29543",
-            "29545",
-            "29540",
-            "29541",
-            "29557",
-            "29553",
-            "29554",
-            "29555",
-            "29550",
-            "29551",
-            "29552",
-            "30025",
-            "29568",
-            "29569",
-            "29565",
-            "29566",
-            "29567",
-            "26298",
-            "29570",
-            "29571",
-            "32581",
-            "32589",
-            "32588",
-            "32587",
-            "32586",
-            "32585",
-            "32584",
-            "32583",
-            "32582",
-            "25662",
-            "25168",
-            "25169",
-            "25167",
-            "25170"
-        ]
+        sku_ids = self.get_sku_ids()
         random.shuffle(sku_ids)
         for sku_id in sku_ids[:goods_num]:
             try:
