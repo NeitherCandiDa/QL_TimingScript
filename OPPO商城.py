@@ -33,6 +33,7 @@ from sendNotify import send_notification_message_collection
 
 oppo_cookies = get_env("oppo_cookie", "@")
 oppo_applet_cookies = get_env("oppo_applet_cookie", "@")
+is_luckyDraw = True  # 是否开启抽奖
 
 
 class Oppo:
@@ -1349,23 +1350,25 @@ def run_g_applet(self: OppoApplet):
     self.g_applet_CrayonShinChan_sign_in()
     self.g_applet_CrayonShinChan_handle_sign_in_award()
     self.g_applet_CrayonShinChan_handle_task()
-    CrayonShinChan_draw_count = self.g_applet_get_draw_count(self.g_applet_CrayonShinChan_raffle_id)
-    for _ in range(CrayonShinChan_draw_count):
-        fn_print("\t>> 前往抽奖")
-        self.g_applet_draw_raffle(self.g_applet_CrayonShinChan_raffle_id, self.g_applet_CrayonShinChan_jimuld_id,
-                                  "蜡笔小新 夏日奇旅")
-        time.sleep(1.5)
+    if is_luckyDraw:
+        CrayonShinChan_draw_count = self.g_applet_get_draw_count(self.g_applet_CrayonShinChan_raffle_id)
+        for _ in range(CrayonShinChan_draw_count):
+            fn_print("\t>> 前往抽奖")
+            self.g_applet_draw_raffle(self.g_applet_CrayonShinChan_raffle_id, self.g_applet_CrayonShinChan_jimuld_id,
+                                      "蜡笔小新 夏日奇旅")
+            time.sleep(1.5)
 
     # 小程序莎莎企业活动
     fn_print("#######开始执行小程序莎莎企业活动任务#######")
     self.g_applet_Sun_enterprise_get_task_activity_info()
     self.g_applet_Sun_enterprise_handle_task()
-    Sun_enterprise_draw_count = self.g_applet_get_draw_count(self.g_applet_Sun_enterprise_raffle_id)
-    for _ in range(Sun_enterprise_draw_count):
-        fn_print("\t>> 前往抽奖")
-        self.g_applet_draw_raffle(self.g_applet_Sun_enterprise_raffle_id, self.g_applet_Sun_enterprise_jimuld_id,
-                                  "莎莎企业 夏日奇旅")
-        time.sleep(1.5)
+    if is_luckyDraw:
+        Sun_enterprise_draw_count = self.g_applet_get_draw_count(self.g_applet_Sun_enterprise_raffle_id)
+        for _ in range(Sun_enterprise_draw_count):
+            fn_print("\t>> 前往抽奖")
+            self.g_applet_draw_raffle(self.g_applet_Sun_enterprise_raffle_id, self.g_applet_Sun_enterprise_jimuld_id,
+                                      "莎莎企业 夏日奇旅")
+            time.sleep(1.5)
 
     # 小程序预约新品活动
     fn_print("#######开始执行小程序预约新品活动任务#######")
