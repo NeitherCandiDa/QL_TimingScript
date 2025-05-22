@@ -587,7 +587,7 @@ class OppoApplet:
             fn_print(f"获取签到天数及签到奖励时出错: {e}")
             return None
 
-    def g_applet_receive_sign_in_award(self, sign_in_activity_id, award_id):
+    def g_applet_receive_sign_in_award(self, sign_in_activity_id, award_id, sign_in_reward_map):
         """ 领取累计签到奖励 """
         try:
             response = self.client.post(
@@ -600,7 +600,7 @@ class OppoApplet:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 200:
-                days = self.g_applet_accumulated_sign_in_reward_map.get(award_id)
+                days = sign_in_reward_map.get(award_id)
                 award_value = data.get('data').get('awardValue')
                 fn_print(f"累计签到{days}天的奖励领取成功！获得： {award_value}")
         except Exception as e:
@@ -614,7 +614,7 @@ class OppoApplet:
         if sign_in_day_num not in g_applet_accumulated_sign_in_reward_map.values():
             return
         award_id = [k for k, v in g_applet_accumulated_sign_in_reward_map.items() if v == sign_in_day_num][0]
-        self.g_applet_receive_sign_in_award(self.g_applet_sign_in_activity_id, award_id)
+        self.g_applet_receive_sign_in_award(self.g_applet_sign_in_activity_id, award_id, g_applet_accumulated_sign_in_reward_map)
 
     def g_applet_get_narrow_channel_task_activity_info(self):
         """ 获取窄渠道活动信息 """
@@ -895,7 +895,7 @@ class OppoApplet:
         if sign_in_day_num not in g_applet_accumulated_sign_in_reward_map.values():
             return
         award_id = [k for k, v in g_applet_accumulated_sign_in_reward_map.items() if v == sign_in_day_num][0]
-        self.g_applet_receive_sign_in_award(self.g_applet_champions_league_sign_in_activity_id, award_id)
+        self.g_applet_receive_sign_in_award(self.g_applet_champions_league_sign_in_activity_id, award_id, g_applet_accumulated_sign_in_reward_map)
 
     def g_applet_football_sign_in(self):
         """ 足球挑战签到 """
@@ -1073,7 +1073,7 @@ class OppoApplet:
         if sign_in_day_num not in g_applet_CrayonShinChan_sign_in_reward_map.values():
             return
         award_id = [k for k, v in g_applet_CrayonShinChan_sign_in_reward_map.items() if v == sign_in_day_num][0]
-        self.g_applet_receive_sign_in_award(self.g_applet_CrayonShinChan_sign_in_activity_id, award_id)
+        self.g_applet_receive_sign_in_award(self.g_applet_CrayonShinChan_sign_in_activity_id, award_id, g_applet_CrayonShinChan_sign_in_reward_map)
 
     def g_applet_Sun_enterprise_get_task_activity_info(self):
         """ 莎莎企业活动信息 """
