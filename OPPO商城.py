@@ -86,18 +86,9 @@ class Oppo:
             return
 
     def get_task_activity_info(self):
-        res = httpx.get(url="https://msec.opposhop.cn/configs/web/advert/230008").json()
-        for item in res['data']:
-            if item['title'] == '个人中心签到入口':
-                details = item.get('details')
-                for detail in details:
-                    if detail['title'] == '任务中心入口':
-                        task_link = detail.get('link')
-                        break
-                break
         try:
             response = self.client.get(
-                url=task_link
+                url="/bp/b371ce270f7509f0"
             )
             response.raise_for_status()
             html = response.text
@@ -350,6 +341,16 @@ class Oppo:
 
 class OppoApplet:
     def __init__(self, g_applet_cookie):
+        self.g_applet_618mainVenue_jimuld_id = None
+        self.g_applet_618mainVenue_raffle_id = None
+        self.g_applet_full_time_jimuld_id = None
+        self.g_applet_full_time_sign_in_activity_id = None
+        self.g_applet_full_time_raffle_id = None
+        self.g_applet_full_time_activity_id = None
+        self.g_applet_ocean_jimuld_id = None
+        self.g_applet_ocean_sign_in_activity_id = None
+        self.g_applet_ocean_raffle_id = None
+        self.g_applet_ocean_activity_id = None
         self.g_applet_reserva_shop_streamCode = None
         self.g_aapplet_reserva_shop_sku_id = None
         self.g_applet_reserva_shop_jimuld_id = None
@@ -411,10 +412,33 @@ class OppoApplet:
         if data['code'] == 200:
             self.user_name = "OPPO会员: " + data['data']['name']
 
+    def get_activity_url(self, url, keyword1, keyword2):
+        try:
+            response = self.client.get(url=url)
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') != 200:
+                fn_print(f"获取活动信息失败！{data.get('message')}")
+                return None
+            datas = data.get('data')
+            for data in datas:
+                if keyword1 in data.get("title"):
+                    for detail in data.get('details'):
+                        if keyword2 in detail.get('title'):
+                            return detail.get('link')
+            return None
+        except Exception as e:
+            fn_print(f"获取活动信息时出错: {e}")
+            return None
+
     def g_applet_get_task_activity_info(self):
+        url = self.get_activity_url("https://msec.opposhop.cn/configs/web/advert/300003", "福利专区", "签到")
+        if url is None:
+            fn_print("获取活动信息异常，任务停止！")
+            exit()
         try:
             response = self.client.get(
-                url="https://hd.opposhop.cn/bp/bc76f8c5b1871543"
+                url=url
             )
             response.raise_for_status()
             html = response.text
@@ -614,13 +638,18 @@ class OppoApplet:
         if sign_in_day_num not in g_applet_accumulated_sign_in_reward_map.values():
             return
         award_id = [k for k, v in g_applet_accumulated_sign_in_reward_map.items() if v == sign_in_day_num][0]
-        self.g_applet_receive_sign_in_award(self.g_applet_sign_in_activity_id, award_id, g_applet_accumulated_sign_in_reward_map)
+        self.g_applet_receive_sign_in_award(self.g_applet_sign_in_activity_id, award_id,
+                                            g_applet_accumulated_sign_in_reward_map)
 
     def g_applet_get_narrow_channel_task_activity_info(self):
         """ 获取窄渠道活动信息 """
+        url = self.get_activity_url("https://msec.opposhop.cn/configs/web/advert/300003", "福利专区", "窄渠道")
+        if url is None:
+            fn_print("获取活动信息异常，任务停止！")
+            exit()
         try:
             response = self.client.get(
-                url=f"/bp/570b7804563e591f"
+                url=url
             )
             response.raise_for_status()
             html = response.text
@@ -691,9 +720,13 @@ class OppoApplet:
 
     def g_applet_618membership_subsidy_get_task_activity_info(self):
         """ 获取618会员补贴活动信息 """
+        url = self.get_activity_url("https://msec.opposhop.cn/configs/web/advert/300003", "首页定帧", "积分膨胀")
+        if url is None:
+            fn_print("获取活动信息异常，任务停止！")
+            exit()
         try:
             response = self.client.get(
-                url=f"/bp/102f975c9402ee8f"
+                url=url
             )
             response.raise_for_status()
             html = response.text
@@ -778,31 +811,46 @@ class OppoApplet:
             # 使用正则表达式提取活动ID
             pattern = r'window\.__DSL__\s*=\s*({.*?});'
             match = re.search(pattern, html, re.DOTALL)
-            if match:
-                dsl_json = json.loads(match.group(1))
-                task_cmps = dsl_json.get("cmps")
-                for cmp in task_cmps:
-                    if "Task" in cmp:
-                        task_field = cmp
-                        continue
-                    if "Raffle" in cmp:
-                        raffle_field = cmp
-                        continue
-                    if "SignIn" in cmp:
-                        signin_field = cmp
-                        continue
-                self.g_applet_champions_league_activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo'][
-                    'activityId']
-                self.g_applet_champions_league_sign_in_activity_id = \
-                    dsl_json['byId'][signin_field]['attr']['activityInfo']['activityId']
-                self.g_applet_champions_league_raffle_id = \
-                    dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
-                self.g_applet_champions_league_jimuld_id = dsl_json['activityId']
+            if not match:
+                fn_print(f"❌未找到欧冠联赛活动的DSL数据，请检查页面是否更新！")
+                return
+            dsl_json = json.loads(match.group(1))
+            task_cmps = dsl_json.get("cmps", [])
+            task_field = raffle_field = signin_field = None
+            for cmp in task_cmps:
+                if "Task" in cmp:
+                    task_field = cmp
+                elif "Raffle" in cmp:
+                    raffle_field = cmp
+                elif "SignIn" in cmp:
+                    signin_field = cmp
+            if task_field:
+                try:
+                    self.g_applet_champions_league_activity_id = \
+                        dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
+                except KeyError:
+                    fn_print("⚠️任务ID解析失败")
+            if raffle_field:
+                try:
+                    self.g_applet_champions_league_raffle_id = \
+                        dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
+                except KeyError:
+                    fn_print("⚠️抽奖ID解析失败")
+            if signin_field:
+                try:
+                    self.g_applet_champions_league_sign_in_activity_id = \
+                        dsl_json['byId'][signin_field]['attr']['activityInfo']['activityId']
+                except KeyError:
+                    fn_print("⚠️签到ID解析失败")
+            self.g_applet_champions_league_jimuld_id = dsl_json['activityId']
         except Exception as e:
             fn_print(f"获取欧冠联赛活动ID时出错: {e}")
 
     def g_applet_champions_league_get_task_list(self):
         """ 获取欧冠联赛活动任务列表 """
+        if not self.g_applet_champions_league_activity_id:
+            fn_print("⚠️未获取到欧冠联赛活动ID")
+            return []
         try:
             response = self.client.get(
                 url=f"/api/cn/oapi/marketing/task/queryTaskList?activityId={self.g_applet_champions_league_activity_id}&source=c"
@@ -850,6 +898,9 @@ class OppoApplet:
 
     def g_applet_champions_league_sign_in(self):
         """ 欧冠联赛签到 """
+        if not self.g_applet_champions_league_sign_in_activity_id:
+            fn_print("⏭️未找到欧冠联赛活动签到活动ID，跳过签到")
+            return
         try:
             response = self.client.post(
                 url=f"/api/cn/oapi/marketing/cumulativeSignIn/signIn",
@@ -870,6 +921,9 @@ class OppoApplet:
 
     def g_applet_champions_league_get_sign_in_detail(self):
         """ 获取欧冠联赛签到天数和累计签到奖励 """
+        if not self.g_applet_champions_league_sign_in_activity_id:
+            fn_print("⏭️未找到欧冠联赛活动签到活动ID，跳过获取签到天数和奖励")
+            return None, None
         try:
             response = self.client.get(
                 url=f"/api/cn/oapi/marketing/cumulativeSignIn/getSignInDetail?activityId={self.g_applet_champions_league_sign_in_activity_id}"
@@ -885,7 +939,7 @@ class OppoApplet:
             return sign_in_day_num, g_applet_accumulated_sign_in_reward_map
         except Exception as e:
             fn_print(f"获取欧冠联赛签到天数及签到奖励时出错: {e}")
-            return None
+            return None, None
 
     def g_applet_champions_league_handle_sign_in_award(self):
         """ 处理累计签到奖励 """
@@ -895,53 +949,8 @@ class OppoApplet:
         if sign_in_day_num not in g_applet_accumulated_sign_in_reward_map.values():
             return
         award_id = [k for k, v in g_applet_accumulated_sign_in_reward_map.items() if v == sign_in_day_num][0]
-        self.g_applet_receive_sign_in_award(self.g_applet_champions_league_sign_in_activity_id, award_id, g_applet_accumulated_sign_in_reward_map)
-
-    def g_applet_football_sign_in(self):
-        """ 足球挑战签到 """
-        try:
-            response = self.client.post(
-                url=f"/api/public/third1/v1/users/sign-in"
-            )
-            data = response.json()
-            if data.get('success') and data.get('message') == '签到成功':
-                fn_print(f"✅足球挑战签到成功！获得积分： {data.get('increasedPoints')}")
-            elif not data.get('success') and response.status_code == 400:
-                fn_print(data.get('message'))
-            else:
-                fn_print(f"❌足球挑战签到失败！{data.get('message')}")
-        except Exception as e:
-            fn_print(f"足球挑战签到时出错: {e}")
-
-    def g_applet_football_share(self):
-        """ 足球挑战分享 """
-        try:
-            response = self.client.post(
-                url=f"/api/public/third1/v1/users/share-success"
-            )
-            response.raise_for_status()
-            data = response.json()
-            if data.get('success') and data.get('message') == '分享成功':
-                fn_print(f"✅足球挑战分享成功！获得积分： {data.get('increasedPoints')}")
-            else:
-                fn_print(f"❌足球挑战分享失败！{data.get('message')}")
-        except Exception as e:
-            fn_print(f"足球挑战分享时出错: {e}")
-
-    def g_applet_football_watch_video(self):
-        """ 足球挑战观看视频 """
-        try:
-            response = self.client.post(
-                url=f"/api/public/third1/v1/users/get-ad-reward"
-            )
-            response.raise_for_status()
-            data = response.json()
-            if data.get('success') and data.get('message') == '获取奖励成功':
-                fn_print(f"✅足球挑战观看视频成功！")
-            else:
-                fn_print(f"❌足球挑战观看视频失败！{data.get('message')}")
-        except Exception as e:
-            fn_print(f"足球挑战观看视频时出错: {e}")
+        self.g_applet_receive_sign_in_award(self.g_applet_champions_league_sign_in_activity_id, award_id,
+                                            g_applet_accumulated_sign_in_reward_map)
 
     def g_applet_CrayonShinChan_get_task_activity_info(self):
         """ 蜡笔小新活动信息 """
@@ -954,31 +963,50 @@ class OppoApplet:
             # 使用正则表达式提取活动ID
             pattern = r'window\.__DSL__\s*=\s*({.*?});'
             match = re.search(pattern, html, re.DOTALL)
-            if match:
-                dsl_json = json.loads(match.group(1))
-                task_cmps = dsl_json.get("cmps")
-                for cmp in task_cmps:
-                    if "Task" in cmp:
-                        task_field = cmp
-                        continue
-                    if "Raffle" in cmp:
-                        raffle_field = cmp
-                        continue
-                    if "SignIn" in cmp:
-                        signin_field = cmp
-                        continue
-                self.g_applet_CrayonShinChan_activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo'][
-                    'activityId']
-                self.g_applet_CrayonShinChan_raffle_id = dsl_json['byId'][raffle_field]['attr']['activityInformation'][
-                    'raffleId']
-                self.g_applet_CrayonShinChan_jimuld_id = dsl_json['activityId']
-                self.g_applet_CrayonShinChan_sign_in_activity_id = \
-                    dsl_json['byId'][signin_field]['attr']['activityInfo']['activityId']
+            if not match:
+                fn_print("❌未找到蜡笔小新活动的DSL数据，请检查页面结构是否发生变化。")
+                return
+            dsl_json = json.loads(match.group(1))
+            task_cmps = dsl_json.get("cmps", [])
+            # 初始化所有字段为None
+            task_field = raffle_field = signin_field = None
+            for cmp in task_cmps:
+                if "Task" in cmp:
+                    task_field = cmp
+                elif "Raffle" in cmp:
+                    raffle_field = cmp
+                elif "SignIn" in cmp:
+                    signin_field = cmp
+            if task_field:
+                try:
+                    self.g_applet_CrayonShinChan_activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo'][
+                        'activityId']
+                except KeyError:
+                    fn_print("⚠️任务ID解析失败")
+            if raffle_field:
+                try:
+                    self.g_applet_CrayonShinChan_raffle_id = \
+                        dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
+                except KeyError:
+                    fn_print("⚠️抽奖ID解析失败")
+
+            if signin_field:
+                try:
+                    self.g_applet_CrayonShinChan_sign_in_activity_id = \
+                        dsl_json['byId'][signin_field]['attr']['activityInfo']['activityId']
+                except KeyError:
+                    fn_print("⚠️签到ID解析失败")
+            else:
+                fn_print("ℹ️未找到签到组件信息")
+            self.g_applet_CrayonShinChan_jimuld_id = dsl_json['activityId']
         except Exception as e:
             fn_print(f"获取蜡笔小新活动ID时出错: {e}")
 
     def g_applet_CrayonShinChan_get_task_list(self):
         """ 获取蜡笔小新活动任务列表 """
+        if not self.g_applet_CrayonShinChan_activity_id:
+            fn_print("❌蜡笔小新活动ID未设置，请先获取活动ID。")
+            return []
         try:
             response = self.client.get(
                 url=f"/api/cn/oapi/marketing/task/queryTaskList?activityId={self.g_applet_CrayonShinChan_activity_id}&source=c"
@@ -1028,6 +1056,9 @@ class OppoApplet:
 
     def g_applet_CrayonShinChan_sign_in(self):
         """ 蜡笔小新签到 """
+        if not self.g_applet_CrayonShinChan_sign_in_activity_id:
+            fn_print("⏭️未找到蜡笔小新签到活动ID，跳过签到")
+            return
         try:
             response = self.client.post(
                 url="/api/cn/oapi/marketing/cumulativeSignIn/signIn",
@@ -1048,6 +1079,9 @@ class OppoApplet:
 
     def g_applet_CrayonShinChan_get_sign_in_detail(self):
         """ 获取蜡笔小新签到天数和累计签到奖励 """
+        if not self.g_applet_CrayonShinChan_sign_in_activity_id:
+            fn_print("⏭️未找到蜡笔小新签到活动ID，跳过获取签到信息")
+            return None, None
         try:
             response = self.client.get(
                 url=f"/api/cn/oapi/marketing/cumulativeSignIn/getSignInDetail?activityId={self.g_applet_CrayonShinChan_sign_in_activity_id}"
@@ -1073,7 +1107,8 @@ class OppoApplet:
         if sign_in_day_num not in g_applet_CrayonShinChan_sign_in_reward_map.values():
             return
         award_id = [k for k, v in g_applet_CrayonShinChan_sign_in_reward_map.items() if v == sign_in_day_num][0]
-        self.g_applet_receive_sign_in_award(self.g_applet_CrayonShinChan_sign_in_activity_id, award_id, g_applet_CrayonShinChan_sign_in_reward_map)
+        self.g_applet_receive_sign_in_award(self.g_applet_CrayonShinChan_sign_in_activity_id, award_id,
+                                            g_applet_CrayonShinChan_sign_in_reward_map)
 
     def g_applet_Sun_enterprise_get_task_activity_info(self):
         """ 莎莎企业活动信息 """
@@ -1260,6 +1295,233 @@ class OppoApplet:
         except Exception as e:
             fn_print(f"预约新商品时出错: {e}")
 
+    def g_applet_ocean_get_task_activity_info(self):
+        """ 获取海洋「琦」遇活动信息 """
+        try:
+            response = self.client.get(
+                url=f"/bp/3859e6f1cfe2a4ab"
+            )
+            response.raise_for_status()
+            html = response.text
+            # 使用正则表达式提取活动ID
+            pattern = r'window\.__DSL__\s*=\s*({.*?});'
+            match = re.search(pattern, html, re.DOTALL)
+            if not match:
+                fn_print("❌未找到海洋「琦」遇活动的DSL数据，请检查页面是否更新！")
+                return
+            dsl_json = json.loads(match.group(1))
+            task_cmps = dsl_json.get("cmps", [])
+            task_field = raffle_field = signin_field = None
+            for cmp in task_cmps:
+                if "Task" in cmp:
+                    task_field = cmp
+                elif "Raffle" in cmp:
+                    raffle_field = cmp
+                elif "SignIn" in cmp:
+                    signin_field = cmp
+            if task_field:
+                try:
+                    self.g_applet_ocean_activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo'][
+                        'activityId']
+                except KeyError:
+                    fn_print("⚠️任务ID解析失败")
+            if raffle_field:
+                try:
+                    self.g_applet_ocean_raffle_id = \
+                        dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
+                except KeyError:
+                    fn_print("⚠️抽奖ID解析失败")
+            if signin_field:
+                try:
+                    self.g_applet_ocean_sign_in_activity_id = \
+                        dsl_json['byId'][signin_field]['attr']['activityInfo']['activityId']
+                except KeyError:
+                    fn_print("⚠️签到ID解析失败")
+            self.g_applet_ocean_jimuld_id = dsl_json['activityId']
+        except Exception as e:
+            fn_print(f"获取海洋「琦」遇活动ID时出错: {e}")
+
+    def g_applet_ocean_get_task_list(self):
+        """ 获取海洋「琦」遇活动任务列表 """
+        if not self.g_applet_ocean_activity_id:
+            fn_print("⚠️未找到海洋「琦」遇活动ID，跳过获取任务列表")
+            return []
+        try:
+            response = self.client.get(
+                url=f"/api/cn/oapi/marketing/task/queryTaskList?activityId={self.g_applet_ocean_activity_id}&source=c"
+            )
+            response.raise_for_status()
+            data = response.json()
+            task_list_info = []
+            if not data.get('data').get('taskDTOList'):
+                fn_print(f"获取海洋「琦」遇活动任务列表失败！-> {data.get('message')}")
+                return task_list_info
+            for task in data.get('data').get('taskDTOList'):
+                task_list_info.append(
+                    {
+                        "task_name": task.get('taskName'),
+                        "task_id": task.get('taskId'),
+                        "activity_id": task.get('activityId'),
+                        "task_type": task.get('taskType'),
+                        "browseTime": task.get('attachConfigOne').get('browseTime') if task.get(
+                            'attachConfigOne') else None
+                    }
+                )
+            return task_list_info
+        except Exception as e:
+            fn_print(f"获取海洋「琦」遇活动任务列表时出错: {e}")
+            return []
+
+    def g_applet_ocean_handle_task(self):
+        task_list = self.g_applet_ocean_get_task_list()
+        for task in task_list:
+            task_name = task.get('task_name')
+            task_id = task.get('task_id')
+            activity_id = task.get('activity_id')
+            task_type = task.get('task_type')
+            browse_time = task.get('browseTime')
+            if task_type == 1:
+                self.g_applet_todo_task_by_browse_page(task_name, task_id, activity_id, task_type)
+                time.sleep(browse_time + 1)
+                self.g_applet_receive_reward(task_name, task_id, activity_id)
+            elif task_type == 2:
+                self.g_applet_todo_task_by_browse_page(task_name, task_id, activity_id, task_type)
+                self.g_applet_receive_reward(task_name, task_id, activity_id)
+            elif task_type == 6:
+                continue
+            else:
+                fn_print(f"海洋「琦」遇-暂不支持{task_type}类型任务，请向作者反馈‼️")
+                continue
+
+    def g_applet_full_time_get_task_activity_info(self):
+        """ 获取618 · 全职「补」给活动信息 """
+        try:
+            response = self.client.get(
+                url=f"/bp/3d6adf457b29db15"
+            )
+            response.raise_for_status()
+            html = response.text
+            # 使用正则表达式提取活动ID
+            pattern = r'window\.__DSL__\s*=\s*({.*?});'
+            match = re.search(pattern, html, re.DOTALL)
+            if not match:
+                fn_print("❌未找到618 · 全职「补」给活动的DSL数据，请检查页面是否更新！")
+                return
+            dsl_json = json.loads(match.group(1))
+            task_cmps = dsl_json.get("cmps", [])
+            task_field = signin_field = None
+            raffle_fields = []
+            for cmp in task_cmps:
+                if "Task" in cmp:
+                    task_field = cmp
+                elif "Raffle" in cmp:
+                    raffle_fields.append(cmp)
+                elif "SignIn" in cmp:
+                    signin_field = cmp
+            if task_field:
+                try:
+                    self.g_applet_full_time_activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo'][
+                        'activityId']
+                except KeyError:
+                    fn_print("⚠️任务ID解析失败")
+            if raffle_fields:
+                try:
+                    self.g_applet_full_time_raffle_id = \
+                        dsl_json['byId'][raffle_fields[0]]['attr']['activityInformation']['raffleId']
+                except KeyError:
+                    fn_print("⚠️抽奖ID解析失败")
+            if signin_field:
+                try:
+                    self.g_applet_full_time_sign_in_activity_id = \
+                        dsl_json['byId'][signin_field]['attr']['activityInfo']['activityId']
+                except KeyError:
+                    fn_print("⚠️签到ID解析失败")
+            self.g_applet_full_time_jimuld_id = dsl_json['activityId']
+        except Exception as e:
+            fn_print(f"获取618 · 全职「补」给活动ID时出错: {e}")
+
+    def g_applet_full_time_get_task_list(self):
+        """ 获取618 · 全职「补」给活动任务列表 """
+        if not self.g_applet_full_time_activity_id:
+            fn_print("⚠️未找到618 · 全职「补」给活动ID，跳过获取任务列表")
+            return []
+        try:
+            response = self.client.get(
+                url=f"/api/cn/oapi/marketing/task/queryTaskList?activityId={self.g_applet_full_time_activity_id}&source=c"
+            )
+            response.raise_for_status()
+            data = response.json()
+            task_list_info = []
+            if not data.get('data').get('taskDTOList'):
+                fn_print(f"获取618 · 全职「补」给活动任务列表失败！-> {data.get('message')}")
+                return task_list_info
+            for task in data.get('data').get('taskDTOList'):
+                task_list_info.append(
+                    {
+                        "task_name": task.get('taskName'),
+                        "task_id": task.get('taskId'),
+                        "activity_id": task.get('activityId'),
+                        "task_type": task.get('taskType'),
+                        "browseTime": task.get('attachConfigOne').get('browseTime') if task.get(
+                            'attachConfigOne') else None
+                    }
+                )
+            return task_list_info
+        except Exception as e:
+            fn_print(f"获取618 · 全职「补」给活动任务列表时出错: {e}")
+            return []
+
+    def g_applet_full_time_handle_task(self):
+        task_list = self.g_applet_full_time_get_task_list()
+        for task in task_list:
+            task_name = task.get('task_name')
+            task_id = task.get('task_id')
+            activity_id = task.get('activity_id')
+            task_type = task.get('task_type')
+            browse_time = task.get('browseTime')
+            if task_type == 1:
+                self.g_applet_todo_task_by_browse_page(task_name, task_id, activity_id, task_type)
+                time.sleep(browse_time + 1)
+                self.g_applet_receive_reward(task_name, task_id, activity_id)
+            elif task_type == 2:
+                self.g_applet_todo_task_by_browse_page(task_name, task_id, activity_id, task_type)
+                self.g_applet_receive_reward(task_name, task_id, activity_id)
+            elif task_type == 6:
+                continue
+            else:
+                fn_print(f"618 · 全职「补」给-暂不支持{task_type}类型任务，请向作者反馈‼️")
+                continue
+
+    def g_applet_618mainVenue_get_task_activity_info(self):
+        """ 获取618主会场活动信息 """
+        try:
+            response = self.client.get(
+                url="/bp/6df3b6a0d359165c"
+            )
+            response.raise_for_status()
+            html = response.text
+            # 使用正则表达式提取活动ID
+            pattern = r'window\.__DSL__\s*=\s*({.*?});'
+            match = re.search(pattern, html, re.DOTALL)
+            if not match:
+                fn_print("❌未找到618主会场活动的DSL数据，请检查页面是否更新！")
+                return
+            dsl_json = json.loads(match.group(1))
+            task_cmps = dsl_json.get("cmps", [])
+            raffle_field = None
+            for cmp in task_cmps:
+                if "Raffle" in cmp:
+                    raffle_field = cmp
+            if raffle_field:
+                try:
+                    self.g_applet_618mainVenue_raffle_id = \
+                        dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
+                except KeyError:
+                    fn_print("⚠️抽奖ID解析失败")
+            self.g_applet_618mainVenue_jimuld_id = dsl_json['activityId']
+        except Exception as e:
+            fn_print(f"获取618主会场活动ID时出错: {e}")
+
     def get_user_total_points(self):
         """ 获取用户总积分 """
         try:
@@ -1337,13 +1599,6 @@ def run_g_applet(self: OppoApplet):
                                   "欧冠联赛 巅峰对决")
         time.sleep(3)
 
-    # 小程序只管去踢 OPPO 足球挑战
-    # fn_print("#######开始执行小程序只管去踢 OPPO 足球挑战任务#######")
-    # self.g_applet_football_sign_in()
-    # self.g_applet_football_share()
-    # self.g_applet_football_watch_video()
-    # TODO 踢足球活动
-
     # 小程序蜡笔小新活动
     fn_print("#######开始执行小程序蜡笔小新活动任务#######")
     self.g_applet_CrayonShinChan_get_task_activity_info()
@@ -1371,17 +1626,51 @@ def run_g_applet(self: OppoApplet):
             time.sleep(1.5)
 
     # 小程序预约新品活动
-    fn_print("#######开始执行小程序预约新品活动任务#######")
-    self.g_applet_reserva_shop_get_task_activity_info()
-    self.g_applet_reserva_shop_handle_task()
-    self.g_applet_reserva_shop_products(self.g_aapplet_reserva_shop_sku_id, self.g_applet_reserva_shop_jimuld_id,
-                                        self.g_applet_reserva_shop_streamCode)
-    reserva_shop_draw_count = self.g_applet_get_draw_count(self.g_applet_reserva_shop_raffle_id)
-    for _ in range(reserva_shop_draw_count):
+    # fn_print("#######开始执行小程序预约新品活动任务#######")
+    # self.g_applet_reserva_shop_get_task_activity_info()
+    # self.g_applet_reserva_shop_handle_task()
+    # self.g_applet_reserva_shop_products(self.g_aapplet_reserva_shop_sku_id, self.g_applet_reserva_shop_jimuld_id,
+    #                                     self.g_applet_reserva_shop_streamCode)
+    # reserva_shop_draw_count = self.g_applet_get_draw_count(self.g_applet_reserva_shop_raffle_id)
+    # for _ in range(reserva_shop_draw_count):
+    #     fn_print("\t>> 前往抽奖")
+    #     self.g_applet_draw_raffle(self.g_applet_reserva_shop_raffle_id, self.g_applet_reserva_shop_jimuld_id,
+    #                               "一加 Ace 5 至尊系列新品上市")
+    #     time.sleep(1.5)
+
+    # 海洋「琦」遇活动
+
+    fn_print("#######开始执行海洋「琦」遇活动任务#######")
+    self.g_applet_ocean_get_task_activity_info()
+    self.g_applet_ocean_handle_task()
+    if is_luckyDraw:
+        ocean_draw_count = self.g_applet_get_draw_count(self.g_applet_ocean_raffle_id)
+        for _ in range(ocean_draw_count):
+            fn_print("\t>> 前往抽奖")
+            self.g_applet_draw_raffle(self.g_applet_ocean_raffle_id, self.g_applet_ocean_jimuld_id,
+                                      "海洋「琦」遇 人鱼送礼")
+            time.sleep(1.5)
+
+    # 618 · 全职「补」给活动
+    fn_print("#######开始执行618 · 全职「补」给活动任务#######")
+    self.g_applet_full_time_get_task_activity_info()
+    self.g_applet_full_time_handle_task()
+    if is_luckyDraw:
+        full_time_draw_count = self.g_applet_get_draw_count(self.g_applet_full_time_raffle_id)
+        for _ in range(full_time_draw_count):
+            fn_print("\t>> 前往抽奖")
+            self.g_applet_draw_raffle(self.g_applet_full_time_raffle_id, self.g_applet_full_time_jimuld_id,
+                                      "618 · 全职「补」给")
+            time.sleep(2.5)
+
+    # 618主会场活动
+    fn_print("#######开始执行618主会场活动任务#######")
+    self.g_applet_618mainVenue_get_task_activity_info()
+    mainVenue_draw_count = self.g_applet_get_draw_count(self.g_applet_618mainVenue_raffle_id)
+    for _ in range(mainVenue_draw_count):
         fn_print("\t>> 前往抽奖")
-        self.g_applet_draw_raffle(self.g_applet_reserva_shop_raffle_id, self.g_applet_reserva_shop_jimuld_id,
-                                  "一加 Ace 5 至尊系列新品上市")
-        time.sleep(1.5)
+        self.g_applet_draw_raffle(self.g_applet_618mainVenue_raffle_id, self.g_applet_618mainVenue_jimuld_id,
+                                  "OPPO 商城 618 主会场")
 
     self.get_user_total_points()
 
