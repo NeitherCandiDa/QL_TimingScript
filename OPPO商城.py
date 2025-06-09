@@ -720,39 +720,47 @@ class OppoApplet:
 
     def g_applet_618membership_subsidy_get_task_activity_info(self):
         """ 获取618会员补贴活动信息 """
-        url = self.get_activity_url("https://msec.opposhop.cn/configs/web/advert/300003", "首页定帧", "积分膨胀")
-        if url is None:
-            fn_print("获取活动信息异常，任务停止！")
-            exit()
         try:
             response = self.client.get(
-                url=url
+                url="/bp/102f975c9402ee8f"
             )
             response.raise_for_status()
             html = response.text
             # 使用正则表达式提取活动ID
             pattern = r'window\.__DSL__\s*=\s*({.*?});'
             match = re.search(pattern, html, re.DOTALL)
-            if match:
-                dsl_json = json.loads(match.group(1))
-                task_cmps = dsl_json.get("cmps")
-                for cmp in task_cmps:
-                    if "Task" in cmp:
-                        task_field = cmp
-                        continue
-                    if "Raffle" in cmp:
-                        raffle_field = cmp
-                        continue
-                self.g_applet_618membership_subsidy_activity_id = \
-                    dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
-                self.g_applet_618membership_subsidy_raffle_id = \
-                    dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
-                self.g_applet_618membership_subsidy_jimuld_id = dsl_json['activityId']
+            if not match:
+                fn_print("❌未找到618会员补贴活动的DSL数据，请检查页面是否更新！")
+                return 
+            dsl_json = json.loads(match.group(1))
+            task_cmps = dsl_json.get("cmps", [])
+            task_field = raffle_field = None
+            for cmp in task_cmps:
+                if "Task" in cmp:
+                    task_field = cmp
+                elif "Raffle" in cmp:
+                    raffle_field = cmp
+            if task_field:
+                try:
+                    self.g_applet_618membership_subsidy_activity_id = \
+                        dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
+                except KeyError:
+                    fn_print("⚠️任务ID解析失败")
+            if raffle_field:
+                try:
+                    self.g_applet_618membership_subsidy_raffle_id = \
+                        dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
+                except KeyError:
+                    fn_print("⚠️抽奖ID解析失败")
+            self.g_applet_618membership_subsidy_jimuld_id = dsl_json['activityId']
         except Exception as e:
             fn_print(f"获取618会员补贴活动ID时出错: {e}")
 
     def g_applet_618membership_subsidy_get_task_list(self):
         """ 获取618会员补贴活动任务列表 """
+        if not self.g_applet_618membership_subsidy_activity_id:
+            fn_print("⚠️618会员补贴活动ID未获取到，无法获取任务列表")
+            return []
         try:
             response = self.client.get(
                 url=f"/api/cn/oapi/marketing/task/queryTaskList?activityId={self.g_applet_618membership_subsidy_activity_id}&source=c"
@@ -1639,7 +1647,6 @@ def run_g_applet(self: OppoApplet):
     #     time.sleep(1.5)
 
     # 海洋「琦」遇活动
-
     fn_print("#######开始执行海洋「琦」遇活动任务#######")
     self.g_applet_ocean_get_task_activity_info()
     self.g_applet_ocean_handle_task()
