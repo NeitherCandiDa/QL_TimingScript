@@ -341,6 +341,9 @@ class Oppo:
 
 class OppoApplet:
     def __init__(self, g_applet_cookie):
+        self.g_applet_snowKing_jimuld_id = None
+        self.g_applet_snowKing_raffle_id = None
+        self.g_applet_snowKing_activity_id = None
         self.g_applet_618mainVenue_jimuld_id = None
         self.g_applet_618mainVenue_raffle_id = None
         self.g_applet_full_time_jimuld_id = None
@@ -731,7 +734,7 @@ class OppoApplet:
             match = re.search(pattern, html, re.DOTALL)
             if not match:
                 fn_print("❌未找到618会员补贴活动的DSL数据，请检查页面是否更新！")
-                return 
+                return
             dsl_json = json.loads(match.group(1))
             task_cmps = dsl_json.get("cmps", [])
             task_field = raffle_field = None
@@ -1530,6 +1533,121 @@ class OppoApplet:
         except Exception as e:
             fn_print(f"获取618主会场活动ID时出错: {e}")
 
+    def g_applet_snowKing_get_task_activity_info(self):
+        """ 获取雪王活动信息 """
+        try:
+            response = self.client.get(
+                url="/bp/f01c2e24199d2d61"
+            )
+            response.raise_for_status()
+            html = response.text
+            # 使用正则表达式提取活动ID
+            pattern = r'window\.__DSL__\s*=\s*({.*?});'
+            match = re.search(pattern, html, re.DOTALL)
+            if not match:
+                fn_print("❌未找到雪王活动的DSL数据，请检查页面是否更新！")
+                return
+            dsl_json = json.loads(match.group(1))
+            task_cmps = dsl_json.get("cmps", [])
+            task_field = raffle_field = None
+            for cmp in task_cmps:
+                if "Task" in cmp:
+                    task_field = cmp
+                elif "Raffle" in cmp:
+                    raffle_field = cmp
+            if task_field:
+                try:
+                    self.g_applet_snowKing_activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo'][
+                        'activityId']
+                except KeyError:
+                    fn_print("⚠️任务ID解析失败")
+            if raffle_field:
+                try:
+                    self.g_applet_snowKing_raffle_id = \
+                        dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
+                except KeyError:
+                    fn_print("⚠️抽奖ID解析失败")
+            self.g_applet_snowKing_jimuld_id = dsl_json['activityId']
+        except Exception as e:
+            fn_print(f"获取雪王活动ID时出错: {e}")
+
+    def g_applet_snowKing_get_task_list(self):
+        """ 获取雪王活动任务列表 """
+        if not self.g_applet_snowKing_activity_id:
+            fn_print("⚠️未找到雪王活动ID，跳过获取任务列表")
+            return []
+        try:
+            response = self.client.get(
+                url=f"/api/cn/oapi/marketing/task/queryTaskList?activityId={self.g_applet_snowKing_activity_id}&source=c"
+            )
+            response.raise_for_status()
+            data = response.json()
+            task_list_info = []
+            if not data.get('data').get('taskDTOList'):
+                fn_print(f"获取雪王活动任务列表失败！-> {data.get('message')}")
+                return task_list_info
+            for task in data.get('data').get('taskDTOList'):
+                if task.get('taskType') == 6:
+                    continue
+                task_list_info.append(
+                    {
+                        "task_name": task.get('taskName'),
+                        "task_id": task.get('taskId'),
+                        "activity_id": task.get('activityId'),
+                        "task_type": task.get('taskType'),
+                        "browseTime": task.get('attachConfigOne').get('browseTime') if task.get(
+                            'attachConfigOne') else None,
+                        "skuId": task.get('attachConfigOne').get('goodsList')[0].get('skuId') if task.get('attachConfigOne').get('goodsList') else None,
+                        "type": 1
+                    }
+                )
+            return task_list_info
+        except Exception as e:
+            fn_print(f"获取雪王活动任务列表时出错: {e}")
+            return []
+
+    def g_applet_reserva_goods(self, sku_id: int, type: int):
+        """ 预约商品 """
+        headers = self.client.headers.copy()
+        headers.update({
+            "Content-Type": "application/x-www-form-urlencoded"
+        })
+        try:
+            response = self.client.post(
+                url=f"https://msec.opposhop.cn/goods/web/info/goods/subscribeV2?skuId={sku_id}&type={type}",
+                headers=headers
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200 and data.get('data').get('isSubscribe'):
+                fn_print(f"✅预约商品成功！")
+            else:
+                fn_print(f"⏭️{data.get('errorMessage')}")
+        except Exception as e:
+            fn_print(f"预约商品时出错: {e}")
+
+    def g_applet_snowKing_handle_task(self):
+        task_list = self.g_applet_snowKing_get_task_list()
+        for task in task_list:
+            task_name = task.get('task_name')
+            task_id = task.get('task_id')
+            activity_id = task.get('activity_id')
+            task_type = task.get('task_type')
+            browse_time = task.get('browseTime')
+            if task_type == 1:
+                self.g_applet_todo_task_by_browse_page(task_name, task_id, activity_id, task_type)
+                time.sleep(browse_time + 1)
+                self.g_applet_receive_reward(task_name, task_id, activity_id)
+            elif task_type == 2:
+                self.g_applet_todo_task_by_browse_page(task_name, task_id, activity_id, task_type)
+                self.g_applet_receive_reward(task_name, task_id, activity_id)
+            elif task_type == 4:
+                self.g_applet_reserva_goods(task.get('skuId'), task.get('type'))
+                self.g_applet_receive_reward(task_name, task_id, activity_id)
+            else:
+                fn_print(f"雪王-暂不支持{task_type}类型任务，请向作者反馈‼️")
+                continue
+
     def get_user_total_points(self):
         """ 获取用户总积分 """
         try:
@@ -1678,6 +1796,17 @@ def run_g_applet(self: OppoApplet):
         fn_print("\t>> 前往抽奖")
         self.g_applet_draw_raffle(self.g_applet_618mainVenue_raffle_id, self.g_applet_618mainVenue_jimuld_id,
                                   "OPPO 商城 618 主会场")
+
+    # 小程序雪王活动任务
+    fn_print("#######开始执行小程序雪王活动任务#######")
+    self.g_applet_snowKing_get_task_activity_info()
+    self.g_applet_snowKing_handle_task()
+    snowKing_draw_count = self.g_applet_get_draw_count(self.g_applet_snowKing_raffle_id)
+    for _ in range(snowKing_draw_count):
+        fn_print("\t>> 前往抽奖")
+        self.g_applet_draw_raffle(self.g_applet_snowKing_raffle_id, self.g_applet_snowKing_jimuld_id,
+                                  "一加 X 雪王主题系列配件")
+        time.sleep(1.5)
 
     self.get_user_total_points()
 
