@@ -66,7 +66,7 @@ class Oppo:
         if data.get('code') == 200 and data.get('data').get('cumulativeAwards'):
             cumulative_awards: list = data.get('data').get('cumulativeAwards')
             for cumulative_award in cumulative_awards:
-                sign_in_days_map[cumulative_award['awardId']] = cumulative_award['signDayNum']
+                sign_in_days_map[cumulative_award['awardId']] = (cumulative_award['signDayNum'], cumulative_award['status'])
             return sign_in_days_map
         else:
             fn_print("获取累计签到天数信息失败❌")
@@ -316,7 +316,7 @@ class Oppo:
             response.raise_for_status()
             data = response.json()
             if data.get('data'):
-                days = self.sign_in_days_map.get(award_id)
+                days, status = self.sign_in_days_map.get(award_id)
                 award_value = data.get('data').get('awardValue')
                 if len(award_value.strip()) > 0:
                     fn_print(f"**{self.user_name}**，领取累计{days}天签到奖励成功！获得积分： {award_value}")
@@ -333,10 +333,16 @@ class Oppo:
         sign_in_days_map = self.get_sign_in_detail()
         if sign_in_day_num is None or sign_in_days_map is None:
             return
-        if sign_in_day_num not in sign_in_days_map.values():
-            return
-        award_id = [k for k, v in sign_in_days_map.items() if v == sign_in_day_num][0]
-        self.receive_sign_in_award(award_id)
+        # 领取所有可领取的累计签到奖励
+        for award_id, (sign_day_num, status) in sign_in_days_map.items():
+            if status == 2:  # 2代表可领取
+                self.receive_sign_in_award(award_id)
+
+        # 如果今天的签到天数正好有奖励，且未领取，则领取
+        for award_id, (sign_day_num, status) in sign_in_days_map.items():
+            if sign_day_num == sign_in_day_num and status == 2:
+                self.receive_sign_in_award(award_id)
+                break
 
 
 class OppoApplet:
@@ -1671,6 +1677,7 @@ def run(self: Oppo):
     self.get_user_info()
     self.get_task_activity_info()
     self.sign_in()
+    self.handle_sign_in_awards()
     self.get_task_list_ids()
 
 
