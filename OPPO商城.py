@@ -17,6 +17,11 @@ OPPO商城小程序版：
     开启抓包进入‘OPPO商城小程序’，进入签到任务
     变量oppo_applet_cookie，抓包https://hd.opposhop.cn请求头中的 Cookie，整个Cookie都放进来 
     oppo_applet_cookie变量格式： Cookie   ，多个账号用@隔开
+
+OPPO商城服务版：
+    开启抓包进入‘OPPO服务小程序’，抓包cookie
+    变量oppo_service_cookie，将整个cookie放进来
+    oppo_service_cookie变量格式： Cookie值   ，多个账号用@隔开
 """
 import random
 from urllib.parse import urlparse, parse_qs
@@ -33,6 +38,7 @@ from sendNotify import send_notification_message_collection
 
 oppo_cookies = get_env("oppo_cookie", "@")
 oppo_applet_cookies = get_env("oppo_applet_cookie", "@")
+oppo_service_cookies = get_env("oppo_service_cookie", "@")
 is_luckyDraw = True  # 是否开启抽奖
 
 
@@ -66,7 +72,8 @@ class Oppo:
         if data.get('code') == 200 and data.get('data').get('cumulativeAwards'):
             cumulative_awards: list = data.get('data').get('cumulativeAwards')
             for cumulative_award in cumulative_awards:
-                sign_in_days_map[cumulative_award['awardId']] = (cumulative_award['signDayNum'], cumulative_award['status'])
+                sign_in_days_map[cumulative_award['awardId']] = (cumulative_award['signDayNum'],
+                                                                 cumulative_award['status'])
             return sign_in_days_map
         else:
             fn_print("获取累计签到天数信息失败❌")
@@ -1603,7 +1610,8 @@ class OppoApplet:
                         "task_type": task.get('taskType'),
                         "browseTime": task.get('attachConfigOne').get('browseTime') if task.get(
                             'attachConfigOne') else None,
-                        "skuId": task.get('attachConfigOne').get('goodsList')[0].get('skuId') if task.get('attachConfigOne').get('goodsList') else None,
+                        "skuId": task.get('attachConfigOne').get('goodsList')[0].get('skuId') if task.get(
+                            'attachConfigOne').get('goodsList') else None,
                         "type": 1
                     }
                 )
@@ -1837,4 +1845,14 @@ if __name__ == '__main__':
             run_g_applet(oppo_applet)
     else:
         fn_print("‼️未配置小程序的Cookie，跳过小程序签到‼️")
-    send_notification_message_collection(f"OPPO商城签到通知 - {datetime.now().strftime('%Y/%m/%d')}")
+
+    if oppo_service_cookies:
+        from oppo_service import OppoService
+
+        fn_print("=======开始执行OPPO服务小程序任务=======")
+        for cookie in oppo_service_cookies:
+            oppo_service = OppoService(cookie)
+            oppo_service.oppoService_run()
+    else:
+        fn_print("‼️未配置OPPO服务小程序的Cookie，跳过OPPO服务小程序签到‼️")
+    send_notification_message_collection(f"OPPO商城&OPPO服务签到通知 - {datetime.now().strftime('%Y/%m/%d')}")
