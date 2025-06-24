@@ -383,9 +383,9 @@ class OppoApplet:
         self.g_applet_champions_league_raffle_id = None
         self.g_applet_champions_league_sign_in_activity_id = None
         self.g_applet_champions_league_activity_id = None
-        self.g_applet_618membership_subsidy_jimuld_id = None
-        self.g_applet_618membership_subsidy_raffle_id = None
-        self.g_applet_618membership_subsidy_activity_id = None
+        self.g_applet_worryFreeCrazySupplement_jimuld_id = None
+        self.g_applet_worryFreeCrazySupplement_raffle_id = None
+        self.g_applet_worryFreeCrazySupplement_activity_id = None
         self.g_applet_narrow_channel_jimuld_id = None
         self.g_applet_narrow_channel_raffle_id = None
         self.g_applet_narrow_channel_activity_id = None
@@ -592,12 +592,18 @@ class OppoApplet:
             fn_print(f"获取剩余抽奖次数时出错: {e}")
             return 0
 
-    def g_applet_draw_raffle(self, activity_id, jimu_id, jimuName):
+    def g_applet_draw_raffle(self, activity_id, jimu_id, jimuName, **kwargs):
         """ 抽奖 """
-        from urllib.parse import quote
+        from urllib.parse import quote, urlencode
+        params = {
+            "activityId": activity_id,
+            "jimuId": jimu_id,
+            "jimuName": quote(jimuName)
+        }
+        params.update(kwargs)
         try:
             response = self.client.get(
-                url=f"/api/cn/oapi/marketing/raffle/clickRaffle?activityId={activity_id}&jimuId={jimu_id}&jimuName={quote(jimuName)}"
+                url=f"/api/cn/oapi/marketing/raffle/clickRaffle?{urlencode(params)}"
             )
             response.raise_for_status()
             data = response.json()
@@ -734,95 +740,44 @@ class OppoApplet:
                 fn_print(f"小程序专享福利-暂不支持{task_type}类型任务，请向作者反馈‼️")
                 continue
 
-    def g_applet_618membership_subsidy_get_task_activity_info(self):
-        """ 获取618会员补贴活动信息 """
+    def g_applet_worryFreeCrazySupplement_get_task_activity_info(self):
+        """ 获取省心狂补节活动信息 """
         try:
             response = self.client.get(
-                url="/bp/102f975c9402ee8f"
+                url="/bp/da5c14bd85779c05"
             )
             response.raise_for_status()
             html = response.text
             # 使用正则表达式提取活动ID
+            app_pattern = r'window\.__APP__\s*=\s*({.*?});'
+            app_match = re.search(app_pattern, html, re.DOTALL)
+            if not app_match:
+                fn_print("❌未找到省心狂补节活动的APP数据，请检查页面是否更新！")
+                return
+            app_json = json.loads(app_match.group(1))
+            self.creditsDeductActionId = app_json.get("scoreId").get("creditsDeductActionId")
+            self.creditsAddActionId = app_json.get("scoreId").get("creditsAddActionId")
             pattern = r'window\.__DSL__\s*=\s*({.*?});'
             match = re.search(pattern, html, re.DOTALL)
             if not match:
-                fn_print("❌未找到618会员补贴活动的DSL数据，请检查页面是否更新！")
+                fn_print("❌未找到省心狂补节活动的DSL数据，请检查页面是否更新！")
                 return
             dsl_json = json.loads(match.group(1))
             task_cmps = dsl_json.get("cmps", [])
-            task_field = raffle_field = None
+            raffle_field = None
             for cmp in task_cmps:
-                if "Task" in cmp:
-                    task_field = cmp
-                elif "Raffle" in cmp:
+                if "Raffle" in cmp:
                     raffle_field = cmp
-            if task_field:
-                try:
-                    self.g_applet_618membership_subsidy_activity_id = \
-                        dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
-                except KeyError:
-                    fn_print("⚠️任务ID解析失败")
+                    break
             if raffle_field:
                 try:
-                    self.g_applet_618membership_subsidy_raffle_id = \
+                    self.g_applet_worryFreeCrazySupplement_raffle_id = \
                         dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
                 except KeyError:
                     fn_print("⚠️抽奖ID解析失败")
-            self.g_applet_618membership_subsidy_jimuld_id = dsl_json['activityId']
+            self.g_applet_worryFreeCrazySupplement_jimuld_id = dsl_json['activityId']
         except Exception as e:
             fn_print(f"获取618会员补贴活动ID时出错: {e}")
-
-    def g_applet_618membership_subsidy_get_task_list(self):
-        """ 获取618会员补贴活动任务列表 """
-        if not self.g_applet_618membership_subsidy_activity_id:
-            fn_print("⚠️618会员补贴活动ID未获取到，无法获取任务列表")
-            return []
-        try:
-            response = self.client.get(
-                url=f"/api/cn/oapi/marketing/task/queryTaskList?activityId={self.g_applet_618membership_subsidy_activity_id}&source=c"
-            )
-            response.raise_for_status()
-            data = response.json()
-            task_list_info = []
-            if not data.get('data').get('taskDTOList'):
-                fn_print(f"获取618会员补贴活动任务列表失败！-> {data.get('message')}")
-                return task_list_info
-            for task in data.get('data').get('taskDTOList'):
-                if task.get('taskType') == 6:
-                    continue
-                task_list_info.append(
-                    {
-                        "task_name": task.get('taskName'),
-                        "task_id": task.get('taskId'),
-                        "activity_id": task.get('activityId'),
-                        "task_type": task.get('taskType'),
-                        "browseTime": task.get('attachConfigOne').get('browseTime') if task.get(
-                            'attachConfigOne') else None,
-                    }
-                )
-            return task_list_info
-        except Exception as e:
-            fn_print(f"获取618会员补贴活动任务列表时出错: {e}")
-            return []
-
-    def g_applet_618membership_subsidy_handle_task(self):
-        task_list = self.g_applet_618membership_subsidy_get_task_list()
-        for task in task_list:
-            task_name = task.get('task_name')
-            task_id = task.get('task_id')
-            activity_id = task.get('activity_id')
-            task_type = task.get('task_type')
-            browse_time = task.get('browseTime')
-            if task_type == 1:
-                self.g_applet_todo_task_by_browse_page(task_name, task_id, activity_id, task_type)
-                time.sleep(browse_time + 1)
-                self.g_applet_receive_reward(task_name, task_id, activity_id)
-            elif task_type == 2:
-                self.g_applet_todo_task_by_browse_page(task_name, task_id, activity_id, task_type)
-                self.g_applet_receive_reward(task_name, task_id, activity_id)
-            else:
-                fn_print(f"618会员补贴-暂不支持{task_type}类型任务，请向作者反馈‼️")
-                continue
 
     def g_applet_champions_league_get_task_activity_info(self):
         """ 欧冠联赛活动信息 """
@@ -1716,15 +1671,17 @@ def run_g_applet(self: OppoApplet):
                                   "小程序专享福利")
         time.sleep(1.5)
 
-    # 小程序618会员补贴抽奖
-    fn_print("#######开始执行小程序618会员补贴抽奖#######")
-    self.g_applet_618membership_subsidy_get_task_activity_info()
-    self.g_applet_618membership_subsidy_handle_task()
-    _618membership_subsidy_draw_count = self.g_applet_get_draw_count(self.g_applet_618membership_subsidy_raffle_id)
-    for _ in range(_618membership_subsidy_draw_count):
+    # 小程序省心狂补节抽奖
+    fn_print("#######开始执行小程序省心狂补节抽奖#######")
+    self.g_applet_worryFreeCrazySupplement_get_task_activity_info()
+    _worryFreeCrazySupplement_draw_count = self.g_applet_get_draw_count(
+        self.g_applet_worryFreeCrazySupplement_raffle_id)
+    for _ in range(_worryFreeCrazySupplement_draw_count):
         fn_print("\t>> 前往抽奖")
-        self.g_applet_draw_raffle(self.g_applet_618membership_subsidy_raffle_id,
-                                  self.g_applet_618membership_subsidy_jimuld_id, "OPPO 商城 618-会员「补」贴会场")
+        self.g_applet_draw_raffle(self.g_applet_worryFreeCrazySupplement_raffle_id,
+                                  self.g_applet_worryFreeCrazySupplement_jimuld_id, "OPPO 省心狂补节",
+                                  business=1, creditsAddActionId=self.creditsAddActionId,
+                                  creditsDeductActionId=self.creditsDeductActionId)
         time.sleep(3)
 
     # 小程序欧冠联赛
