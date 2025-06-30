@@ -3,15 +3,14 @@
 # @fileName         oppo_service.py
 # @author           Echo
 # @EditTime         2025/6/20
+from activity_base import BaseActivity, ACTIVITY_CONFIG
 import httpx
-
 from fn_print import fn_print
 
-
-class OppoService:
+class OppoServiceActivity(BaseActivity):
     def __init__(self, cookie):
         self.cookie = cookie
-        self.headers = {
+        headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 MicroMessenger/7.0.20.1781(0x6700143B) NetType/WIFI MiniProgramEnv/Windows WindowsWechat/WMPF WindowsWechat(0x63090c33)XWEB/13639",
             "Connection": "keep-alive",
             "Accept": "*/*",
@@ -25,7 +24,9 @@ class OppoService:
             "Sec-Fetch-Dest": "empty",
             "Accept-Language": "zh-CN,zh;q=0.9"
         }
-        self.client = httpx.Client(base_url="https://service-cms.oppo.com", headers=self.headers, verify=False)
+        self.client = httpx.Client(base_url="https://service-cms.oppo.com", headers=headers, verify=False)
+        config = ACTIVITY_CONFIG.get("oppo_service", {})
+        super().__init__(self.client, config)
 
     def get_activity_info(self):
         try:
@@ -68,7 +69,7 @@ class OppoService:
         except Exception as e:
             fn_print(f"❌打卡异常: {e}")
 
-    def oppoService_run(self):
+    def run(self):
         activityId, taskId, is_sign_in = self.get_activity_info()
         if is_sign_in:
             fn_print("⚠️请勿重复签到！")

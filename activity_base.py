@@ -1,0 +1,389 @@
+# -*- coding=UTF-8 -*-
+# @Project          QL_TimingScript
+# @fileName         activity_base.py
+# @author           Echo
+# @EditTime         2025/6/27
+import time
+import json
+import re
+from fn_print import fn_print
+
+ACTIVITY_CONFIG = {
+    "oppo_app": {
+        "APP签到": {
+            "bp_url": "/bp/b371ce270f7509f0",
+            "raffle_name": "APP签到"
+        },
+    },
+    "oppo_applet": {
+        "潮流好物积分兑": {
+            "bp_url": "/bp/747f65c18da6f6b7",
+            "raffle_name": "潮流好物积分兑"
+        },
+        "签到赢好礼": {
+            "bp_url": {
+                "url": "https://msec.opposhop.cn/configs/web/advert/300003",
+                "activity_area": "福利专区",
+                "activity_name": "签到"
+            },
+            "raffle_name": "签到赢好礼"
+        },
+        "专享福利": {
+            "bp_url": {
+                "url": "https://msec.opposhop.cn/configs/web/advert/300003",
+                "activity_area": "福利专区",
+                "activity_name": "窄渠道"
+            },
+            "raffle_name": "小程序专享福利"
+        },
+        "省心狂补节": {
+            "bp_url": "/bp/da5c14bd85779c05",
+            "raffle_name": "OPPO 省心狂补节"
+        },
+        "欧冠联赛": {
+            "bp_url": "/bp/e3c49b889f357f17",
+            "raffle_name": "欧冠联赛 巅峰对决"
+        },
+        "蜡笔小新": {
+            "bp_url": "/bp/2d83f8d2e8e0ef11",
+            "raffle_name": "蜡笔小新 夏日奇旅"
+        },
+        "莎莎企业": {
+            "bp_url": "/bp/457871c72cb6ccd9",
+            "raffle_name": "莎莎企业 夏日奇旅"
+        },
+        "海洋「琦」遇": {
+            "bp_url": "/bp/3859e6f1cfe2a4ab",
+            "raffle_name": "海洋「琦」遇 人鱼送礼"
+        },
+        "雪王": {
+            "bp_url": "/bp/f01c2e24199d2d61",
+            "raffle_name": "一加 X 雪王主题系列配件"
+        },
+    },
+    "oppo_service": {
+        "bp_url": "/oppo-api/signIn/v1/signInActivityInfo?method=GET&region=CN&isoLanguageCode=zh-CN&sourceRoute=3",
+        "raffle_name": "OPPO服务小程序抽奖"
+    }
+}
+
+
+class BaseActivity:
+    def __init__(self, client, config):
+        self.client = client
+        self.config = config
+        self.activity_id = None
+        self.raffle_id = None
+        self.jimuld_id = None
+        self.sign_in_activity_id = None
+        self.user_name = None
+
+    def get_activity_url(self, url, k, v):
+        try:
+            response = self.client.get(url=url)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("code") != 200:
+                fn_print(f"获取活动信息失败！{data.get('message')}")
+                return None
+            datas = data.get("data")
+            for d in datas:
+                if k in d.get("title"):
+                    for detail in d.get("details"):
+                        if v in detail.get("title"):
+                            return detail.get("link")
+            return None
+        except Exception as e:
+            fn_print(f"获取活动信息失败！{e}")
+            return None
+
+    def get_activity_info(self):
+        """通用活动ID提取逻辑，特殊情况子类重写"""
+        bp_url = self.config['bp_url']
+        # 判断是否需要先动态获取url
+        if isinstance(bp_url, dict):
+            url = self.get_activity_url(bp_url['url'], bp_url['activity_area'], bp_url['activity_name'])
+            if not url:
+                fn_print("任务配置存在问题，未获取到活动入口url，跳过该任务")
+                return
+        else:
+            url = bp_url
+        try:
+            response = self.client.get(url)
+            response.raise_for_status()
+            html = response.text
+            # 特殊任务处理
+            # worryFreeCrazySupplement 需要动态解析 creditsAddActionId/creditsDeductActionId
+            if self.config.get('raffle_name') == 'OPPO 省心狂补节':
+                app_pattern = r'window\.__APP__\s*=\s*({.*?});'
+                app_match = re.search(app_pattern, html, re.DOTALL)
+                if app_match:
+                    app_json = json.loads(app_match.group(1))
+                    # 动态注入到 config['draw_extra_params']
+                    if 'draw_extra_params' not in self.config:
+                        self.config['draw_extra_params'] = {}
+                    self.config['draw_extra_params']['business'] = 1
+                    self.config['draw_extra_params']['creditsAddActionId'] = app_json.get('scoreId', {}).get(
+                        'creditsAddActionId')
+                    self.config['draw_extra_params']['creditsDeductActionId'] = app_json.get('scoreId', {}).get(
+                        'creditsDeductActionId')
+
+            pattern = r'window\.__DSL__\s*=\s*({.*?});'
+            match = re.search(pattern, html, re.DOTALL)
+            if not match:
+                fn_print(f"未找到{self.config['raffle_name']}活动的DSL数据， 请检查活动是否结束!")
+                return
+            dsl_json = json.loads(match.group(1))
+            task_cmps = dsl_json.get("cmps", [])
+            task_field = next((cmp for cmp in task_cmps if "Task" in cmp), None)
+            raffle_field = next((cmp for cmp in task_cmps if "Raffle" in cmp), None)
+            sign_in_field = next((cmp for cmp in task_cmps if "SignIn" in cmp), None)
+            if task_field:
+                try:
+                    self.activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
+                except KeyError:
+                    fn_print("⚠️任务ID解析失败")
+            if raffle_field:
+                try:
+                    self.raffle_id = dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
+                except KeyError:
+                    fn_print("⚠️抽奖ID解析失败")
+            if sign_in_field:
+                try:
+                    self.sign_in_activity_id = dsl_json['byId'][sign_in_field]['attr']['activityInfo']['activityId']
+                except KeyError:
+                    fn_print("⚠️签到ID解析失败")
+            self.jimuld_id = dsl_json['activityId']
+        except Exception as e:
+            fn_print(f"获取{self.config['raffle_name']}活动ID时出错: {e}")
+
+    def get_task_list(self):
+        """获取任务列表"""
+        if not self.activity_id:
+            fn_print("⚠️未获取到活动ID，无法获取任务列表")
+            return []
+        try:
+            response = self.client.get(
+                url=f"/api/cn/oapi/marketing/task/queryTaskList?activityId={self.activity_id}&source=c"
+            )
+            response.raise_for_status()
+            data = response.json()
+            task_list_info = data.get('data', {}).get('taskDTOList', [])
+            return task_list_info
+        except Exception as e:
+            fn_print(f"获取任务列表时出错: {e}")
+            return []
+
+    def sign_in(self):
+        """签到"""
+        if not self.sign_in_activity_id:
+            return
+        try:
+            response = self.client.post(
+                url="/api/cn/oapi/marketing/cumulativeSignIn/signIn",
+                json={"activityId": self.sign_in_activity_id}
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"✅签到成功！获得积分： {data.get('data').get('awardValue')}")
+            else:
+                fn_print(f"❌签到失败！{data.get('message')}")
+        except Exception as e:
+            fn_print(f"签到时出错: {e}")
+
+    def get_sign_in_detail(self):
+        """ 获取签到天数和累计签到奖励 """
+        if not self.sign_in_activity_id:
+            return None, None
+        try:
+            response = self.client.get(
+                url=f"/api/cn/oapi/marketing/cumulativeSignIn/getSignInDetail?activityId={self.sign_in_activity_id}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            accumulated_sign_in_reward_map = {}
+            sign_in_day_num = data.get('data').get('signInDayNum')
+            if data.get('code') == 200 and data.get('data').get('cumulativeAwards'):
+                cumulative_awards = data.get('data').get('cumulativeAwards')
+                for award in cumulative_awards:
+                    accumulated_sign_in_reward_map[award.get('awardId')] = award.get('signDayNum')
+            return sign_in_day_num, accumulated_sign_in_reward_map
+        except Exception as e:
+            fn_print(f"获取签到天数及签到奖励时出错: {e}")
+            return None
+
+    def receive_sign_in_award(self, sign_in_activity_id, award_id, sign_in_reward_map):
+        """ 领取累计签到奖励 """
+        try:
+            response = self.client.post(
+                url="/api/cn/oapi/marketing/cumulativeSignIn/drawCumulativeAward",
+                json={
+                    "activityId": sign_in_activity_id,
+                    "awardId": award_id
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                days = sign_in_reward_map.get(award_id)
+                award_value = data.get('data').get('awardValue')
+                fn_print(f"累计签到{days}天的奖励领取成功！获得： {award_value}")
+        except Exception as e:
+            fn_print(f"领取累计签到奖励时出错: {e}")
+
+    def handle_sign_in_award(self):
+        """ 处理累计签到奖励 """
+        sign_in_day_num, accumulated_sign_in_reward_map = self.get_sign_in_detail()
+        if sign_in_day_num is None:
+            return
+        if sign_in_day_num not in accumulated_sign_in_reward_map.values():
+            return
+        award_id = [k for k, v in accumulated_sign_in_reward_map.items() if v == sign_in_day_num][0]
+        self.receive_sign_in_award(
+            self.sign_in_activity_id, award_id, accumulated_sign_in_reward_map
+        )
+
+    def handle_task(self):
+        """处理任务"""
+        task_list = self.get_task_list()
+        for task in task_list:
+            task_name = task.get('taskName')
+            task_id = task.get('taskId')
+            activity_id = task.get('activityId')
+            task_type = task.get('taskType')
+            if task_type in [6, 14, 15, 17]:  # 黑卡任务和学生认证
+                continue
+            if task_type == 1 or task_type == 2:
+                self.complete_task(task_name, task_id, activity_id, task_type)
+                time.sleep(2)
+                self.receive_reward(task_name, task_id, activity_id)
+            else:
+                fn_print(f"【{task_name}】任务暂不支持，‘{task_type}’类型任务不支持‼️")
+
+    def complete_task(self, task_name, task_id, activity_id, task_type):
+        try:
+            response = self.client.get(
+                url=f"/api/cn/oapi/marketing/taskReport/signInOrShareTask?taskId={task_id}&activityId={activity_id}&taskType={task_type}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"✅小程序任务【{task_name}】完成！")
+            else:
+                fn_print(f"❌小程序任务【{task_name}】失败！-> {data.get('message')}")
+        except Exception as e:
+            fn_print(f"完成小程序任务时出错: {e}")
+
+    def receive_reward(self, task_name, task_id, activity_id):
+        try:
+            response = self.client.get(
+                url=f"/api/cn/oapi/marketing/task/receiveAward?taskId={task_id}&activityId={activity_id}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"✅小程序任务【{task_name}】奖励领取成功！")
+            else:
+                fn_print(f"❌小程序任务【{task_name}】-> {data.get('message')}")
+        except Exception as e:
+            fn_print(f"领取小程序任务奖励时出错: {e}")
+
+    def get_draw_count(self):
+        """获取抽奖次数"""
+        if not self.raffle_id:
+            fn_print("⚠️未获取到抽奖ID，无法获取抽奖次数")
+            return 0
+        try:
+            response = self.client.get(
+                url=f"/api/cn/oapi/marketing/raffle/queryRaffleCount?activityId={self.raffle_id}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"剩余抽奖次数：{data.get('data').get('count')}")
+                return data.get('data').get('count')
+            else:
+                fn_print(f"获取剩余抽奖次数失败！-> {data.get('message')}")
+                return 0
+        except Exception as e:
+            fn_print(f"获取抽奖次数时出错: {e}")
+            return 0
+
+    def draw_lottery(self, **kwargs):
+        """抽奖"""
+        from urllib.parse import quote, urlencode
+        params = {
+            "activityId": self.raffle_id,
+            "jimuId": self.jimuld_id,
+            "jimuName": quote(self.config.get("raffle_name"))
+        }
+        if kwargs:
+            params.update(kwargs)
+        try:
+            response = self.client.get(
+                url=f"/api/cn/oapi/marketing/raffle/clickRaffle?{urlencode(params)}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"\t\t>>> 抽奖结果: {data.get('data').get('raffleWinnerVO').get('exhibitAwardName')}")
+            else:
+                fn_print(f"\t\t>>> 抽奖失败！-> {data.get('message')}")
+        except Exception as e:
+            fn_print(f"\t\t>>> 抽奖时出错: {e}")
+
+    def is_login(self):
+        """检测Cookie是否有效，通用实现"""
+        try:
+            response = self.client.get(url="/api/cn/oapi/marketing/task/isLogin")
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 403:
+                fn_print("Cookie已过期或无效，请重新获取")
+                return False
+        except Exception as e:
+            fn_print(f"检测Cookie时出错: {e}")
+            return False
+        return True
+
+    def get_user_info(self):
+        """获取用户信息，通用实现"""
+        try:
+            response = self.client.get(
+                url="/api/cn/oapi/users/web/member/check?unpaid=0"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                self.user_name = "OPPO会员: " + data['data']['name']
+        except Exception as e:
+            fn_print(f"获取用户信息时出错: {e}")
+
+    def get_user_total_points(self):
+        """ 获取用户总积分 """
+        try:
+            response = self.client.get(
+                url=f"https://msec.opposhop.cn/users/web/member/infoDetail"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200 and data.get('data'):
+                fn_print(
+                    f"**OPPO会员: {data.get('data').get('userName')}**，当前总积分: {data.get('data').get('userCredit')}")
+        except Exception as e:
+            fn_print(f"获取用户总积分时出错: {e}")
+
+    def run(self):
+        self.get_activity_info()
+        self.sign_in()
+        if hasattr(self, 'handle_sign_in_award'):
+            self.handle_sign_in_award()
+        self.handle_task()
+        draw_count = self.get_draw_count()
+        for _ in range(draw_count):
+            if self.config.get('draw_extra_params'):
+                self.draw_lottery(**self.config['draw_extra_params'])
+            else:
+                self.draw_lottery()
+            time.sleep(1.5)
