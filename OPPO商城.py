@@ -141,30 +141,34 @@ class OppoAppletActivity(BaseActivity):
         super().__init__(self.client, task_config)
 
 
+def batch_run_and_collect(cls, cookies, configs=None):
+    if configs:
+        for task_key_, task_config_ in configs.items():
+            for cookie_ in cookies:
+                fn_print(f"=======开始执行{cls.__name__}任务：{task_key_}=======")
+                obj = cls(cookie_, task_config_)
+                obj.run()
+    else:
+        for cookie_ in cookies:
+            obj = cls(cookie_)
+            obj.run()
+
+
 if __name__ == '__main__':
     if oppo_cookies:
-        for task_key, task_config in ACTIVITY_CONFIG.get("oppo_app", {}).items():
-            for cookie in oppo_cookies:
-                fn_print(f"=======开始执行APP任务=======")
-                oppo_app = OppoAppActivity(cookie, task_config)
-                oppo_app.run()
+        from activity_base import ACTIVITY_CONFIG
+        batch_run_and_collect(OppoAppActivity, oppo_cookies, ACTIVITY_CONFIG.get("oppo_app", {}))
     else:
         fn_print("‼️未配置OPPO商城APP的Cookie，跳过OPPO商城APP签到‼️")
 
     if oppo_applet_cookies:
-        for task_key, task_config in ACTIVITY_CONFIG.get('oppo_applet', {}).items():
-            for cookie in oppo_applet_cookies:
-                fn_print(f"=======开始执行小程序任务：{task_key} =======")
-                oppo_applet = OppoAppletActivity(cookie, task_config)
-                oppo_applet.run()
+        batch_run_and_collect(OppoAppletActivity, oppo_applet_cookies, ACTIVITY_CONFIG.get("oppo_applet", {}))
     else:
         fn_print("‼️未配置OPPO商城小程序的Cookie，跳过OPPO商城小程序签到‼️")
 
     if oppo_service_cookies:
         from oppo_service import OppoServiceActivity
-        for cookie in oppo_service_cookies:
-            oppo_service = OppoServiceActivity(cookie)
-            oppo_service.run()
+        batch_run_and_collect(OppoServiceActivity, oppo_service_cookies)
     else:
         fn_print("‼️未配置OPPO服务的Cookie，跳过OPPO服务签到‼️")
     send_notification_message_collection(f"OPPO商城&OPPO服务签到通知 - {datetime.now().strftime('%Y/%m/%d')}")
