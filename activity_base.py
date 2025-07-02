@@ -56,10 +56,6 @@ ACTIVITY_CONFIG = {
             "bp_url": "/bp/3859e6f1cfe2a4ab",
             "raffle_name": "海洋「琦」遇 人鱼送礼"
         },
-        "雪王": {
-            "bp_url": "/bp/f01c2e24199d2d61",
-            "raffle_name": "一加 X 雪王主题系列配件"
-        },
     },
     "oppo_service": {
         "bp_url": "/oppo-api/signIn/v1/signInActivityInfo?method=GET&region=CN&isoLanguageCode=zh-CN&sourceRoute=3",
