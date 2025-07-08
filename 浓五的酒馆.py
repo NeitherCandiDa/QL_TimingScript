@@ -55,13 +55,20 @@ class Nwjg:
             if response_data.get('msg', None) is not None and "JWT expired" in response_data.get('msg'):
                 fn_print("获取活动ID失败: token已过期！")
                 return None
-            detailList = response_data['data'][1]['detailList']
 
-            for item in detailList:
-                detail_json = json.loads(item['detailJson'])
-                if detail_json['title'] == '每日签到':
-                    page_path = detail_json['jumpData']['pagePath']
-                    return re.search(r'promotionId=([^&]*)', page_path).group(1)
+            # 遍历所有模块和detailList，查找title为'每日签到'的项
+            for module in response_data.get('data', []):
+                for item in module.get('detailList', []):
+                    try:
+                        detail_json = json.loads(item['detailJson'])
+                        if detail_json.get('title') == '每日签到':
+                            page_path = detail_json['jumpData']['pagePath']
+                            match = re.search(r'promotionId=([^&]*)', page_path)
+                            if match:
+                                return match.group(1)
+                    except Exception as e:
+                        fn_print(f"解析detailJson异常: {e}")
+                        continue
 
             fn_print("未找到每日签到活动")
             return None
