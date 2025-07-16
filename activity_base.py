@@ -16,10 +16,6 @@ ACTIVITY_CONFIG = {
         },
     },
     "oppo_applet": {
-        "潮流好物积分兑": {
-            "bp_url": "/bp/747f65c18da6f6b7",
-            "raffle_name": "潮流好物积分兑"
-        },
         "签到赢好礼": {
             "bp_url": {
                 "url": "https://msec.opposhop.cn/configs/web/advert/300003",
@@ -44,9 +40,9 @@ ACTIVITY_CONFIG = {
             "bp_url": "/bp/e3c49b889f357f17",
             "raffle_name": "欧冠联赛 巅峰对决"
         },
-        "蜡笔小新": {
-            "bp_url": "/bp/2d83f8d2e8e0ef11",
-            "raffle_name": "蜡笔小新 夏日奇旅"
+        "OPPO K13 Turbo 系列新品上市": {
+            "bp_url": "bp/12cb60bc6658a8a0",
+            "raffle_name": "OPPO K13 Turbo 系列新品上市"
         },
         "莎莎企业": {
             "bp_url": "/bp/457871c72cb6ccd9",
@@ -110,7 +106,7 @@ class BaseActivity:
             html = response.text
             # 特殊任务处理
             # worryFreeCrazySupplement 需要动态解析 creditsAddActionId/creditsDeductActionId
-            if self.config.get('raffle_name') == 'OPPO 省心狂补节':
+            if self.config.get('raffle_name') in ['OPPO 省心狂补节', 'OPPO K13 Turbo 系列新品上市']:
                 app_pattern = r'window\.__APP__\s*=\s*({.*?});'
                 app_match = re.search(app_pattern, html, re.DOTALL)
                 if app_match:
@@ -250,7 +246,7 @@ class BaseActivity:
             task_type = task.get('taskType')
             if task_type in [6, 14, 15, 17]:  # 黑卡任务和学生认证
                 continue
-            if task_type == 1 or task_type == 2:
+            if task_type == 1 or task_type == 2 or task_type == 4:
                 self.complete_task(task_name, task_id, activity_id, task_type)
                 time.sleep(2)
                 self.receive_reward(task_name, task_id, activity_id)
