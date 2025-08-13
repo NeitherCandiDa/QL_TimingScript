@@ -348,7 +348,7 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 200:
-                self.user_name = "OPPO会员: " + data['data']['name']
+                self.user_name = data['data']['name']
         except Exception as e:
             fn_print(f"获取用户信息时出错: {e}")
 
@@ -367,6 +367,13 @@ class BaseActivity:
             fn_print(f"获取用户总积分时出错: {e}")
 
     def run(self):
+        # 首先检查登录状态和获取用户信息
+        if not self.is_login():
+            return
+        self.get_user_info()
+        if self.user_name:
+            fn_print(f"🔹 当前账户：{self.user_name}")
+        
         self.get_activity_info()
         self.sign_in()
         if hasattr(self, 'handle_sign_in_award'):
@@ -379,3 +386,6 @@ class BaseActivity:
             else:
                 self.draw_lottery()
             time.sleep(1.5)
+        
+        # 显示账户总积分
+        self.get_user_total_points()
