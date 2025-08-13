@@ -52,6 +52,10 @@ ACTIVITY_CONFIG = {
             "bp_url": "/bp/3859e6f1cfe2a4ab",
             "raffle_name": "海洋「琦」遇 人鱼送礼"
         },
+        "积分乐园": {
+            "bp_url": "/bp/b371ce270f7509f0",
+            "raffle_name": "积分乐园"
+        }
     },
     "oppo_service": {
         "bp_url": "/oppo-api/signIn/v1/signInActivityInfo?method=GET&region=CN&isoLanguageCode=zh-CN&sourceRoute=3",
