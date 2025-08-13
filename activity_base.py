@@ -36,14 +36,6 @@ ACTIVITY_CONFIG = {
             "bp_url": "/bp/da5c14bd85779c05",
             "raffle_name": "OPPO 省心狂补节"
         },
-        "欧冠联赛": {
-            "bp_url": "/bp/e3c49b889f357f17",
-            "raffle_name": "欧冠联赛 巅峰对决"
-        },
-        "OPPO K13 Turbo 系列新品上市": {
-            "bp_url": "bp/12cb60bc6658a8a0",
-            "raffle_name": "OPPO K13 Turbo 系列新品上市"
-        },
         "莎莎企业": {
             "bp_url": "/bp/457871c72cb6ccd9",
             "raffle_name": "莎莎企业 夏日奇旅"
