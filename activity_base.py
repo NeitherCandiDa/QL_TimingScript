@@ -47,7 +47,11 @@ ACTIVITY_CONFIG = {
         "积分乐园": {
             "bp_url": "/bp/b371ce270f7509f0",
             "raffle_name": "积分乐园"
-        }
+        },
+        "排球少年!!联名定制产品图鉴": {
+            "bp_url": "/bp/e0e8a5a074b18a45",
+            "raffle_name": "排球少年!!联名定制产品图鉴"
+        },
     },
     "oppo_service": {
         "bp_url": "/oppo-api/signIn/v1/signInActivityInfo?method=GET&region=CN&isoLanguageCode=zh-CN&sourceRoute=3",
