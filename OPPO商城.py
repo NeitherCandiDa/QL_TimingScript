@@ -44,9 +44,15 @@ is_luckyDraw = True  # 是否开启抽奖
 class OppoAppActivity(BaseActivity):
     def __init__(self, cookie, task_config):
         self.user_name = None
-        self.cookie = cookie.split("#")[0]
-        self.user_agent = cookie.split("#")[1]
-        self.level = self.validate_level(cookie.split("#")[2])
+        cookie_parts = cookie.split("#")
+        if len(cookie_parts) != 3:
+            fn_print("❌Cookie格式错误，应为：Cookie#user_agent#oppo_level")
+            return
+        self.cookie = cookie_parts[0]
+        self.user_agent = cookie_parts[1]
+        self.level = self.validate_level(cookie_parts[2])
+        if not self.level:
+            return
         headers = {
             'User-Agent': self.user_agent,
             'Accept-Encoding': 'gzip, deflate',
@@ -144,14 +150,17 @@ class OppoAppletActivity(BaseActivity):
 def batch_run_and_collect(cls, cookies, configs=None):
     if configs:
         for task_key_, task_config_ in configs.items():
-            for cookie_ in cookies:
-                fn_print(f"=======开始执行{cls.__name__}任务：{task_key_}=======")
+            for i, cookie_ in enumerate(cookies, 1):
+                fn_print(f"=======开始执行{cls.__name__}任务：{task_key_} (账户{i}/{len(cookies)})=======")
                 obj = cls(cookie_, task_config_)
                 obj.run()
+                fn_print(f"=======账户{i}执行完毕=======\n")
     else:
-        for cookie_ in cookies:
+        for i, cookie_ in enumerate(cookies, 1):
+            fn_print(f"=======开始执行{cls.__name__} (账户{i}/{len(cookies)})=======")
             obj = cls(cookie_)
             obj.run()
+            fn_print(f"=======账户{i}执行完毕=======\n")
 
 
 if __name__ == '__main__':
