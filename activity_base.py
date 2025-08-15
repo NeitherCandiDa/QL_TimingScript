@@ -9,6 +9,9 @@ import re
 from fn_print import fn_print
 
 ACTIVITY_CONFIG = {
+
+    "is_luckyDraw": True,  # 是否开启抽奖（所有活动的抽奖）
+
     "oppo_app": {
         "APP签到": {
             "bp_url": "/bp/b371ce270f7509f0",
@@ -34,7 +37,8 @@ ACTIVITY_CONFIG = {
         },
         "省心狂补节": {
             "bp_url": "/bp/da5c14bd85779c05",
-            "raffle_name": "OPPO 省心狂补节"
+            "raffle_name": "OPPO 省心狂补节",
+            "is_luckyDraw": True    # 是否开启抽奖（单独控制某个活动是否抽奖）
         },
         "莎莎企业": {
             "bp_url": "/bp/457871c72cb6ccd9",
@@ -46,11 +50,12 @@ ACTIVITY_CONFIG = {
         },
         "积分乐园": {
             "bp_url": "/bp/b371ce270f7509f0",
-            "raffle_name": "积分乐园"
+            "raffle_name": "积分乐园",
+            "is_luckyDraw": False
         },
         "排球少年!!联名定制产品图鉴": {
             "bp_url": "/bp/e0e8a5a074b18a45",
-            "raffle_name": "排球少年!!联名定制产品图鉴"
+            "raffle_name": "排球少年!!联名定制产品图鉴",
         },
     },
     "oppo_service": {
@@ -366,6 +371,14 @@ class BaseActivity:
         except Exception as e:
             fn_print(f"获取用户总积分时出错: {e}")
 
+    def should_draw_lottery(self):
+        """判断是否应该进行抽奖"""
+        # 单独活动配置优先级高于全局配置
+        if 'is_luckyDraw' in self.config:
+            return self.config['is_luckyDraw']
+        # 如果单独活动没有配置，则使用全局配置
+        return ACTIVITY_CONFIG.get('is_luckyDraw', True)
+
     def run(self):
         # 首先检查登录状态和获取用户信息
         if not self.is_login():
@@ -373,19 +386,29 @@ class BaseActivity:
         self.get_user_info()
         if self.user_name:
             fn_print(f"🔹 当前账户：{self.user_name}")
-        
+
         self.get_activity_info()
         self.sign_in()
         if hasattr(self, 'handle_sign_in_award'):
             self.handle_sign_in_award()
         self.handle_task()
-        draw_count = self.get_draw_count()
-        for _ in range(draw_count):
-            if self.config.get('draw_extra_params'):
-                self.draw_lottery(**self.config['draw_extra_params'])
-            else:
-                self.draw_lottery()
-            time.sleep(1.5)
         
+        # 根据配置决定是否进行抽奖
+        if self.should_draw_lottery():
+            draw_count = self.get_draw_count()
+            if draw_count > 0:
+                fn_print(f"🎲 开始抽奖，共{draw_count}次")
+                for i in range(draw_count):
+                    fn_print(f"第{i+1}次抽奖：", end="")
+                    if self.config.get('draw_extra_params'):
+                        self.draw_lottery(**self.config['draw_extra_params'])
+                    else:
+                        self.draw_lottery()
+                    time.sleep(1.5)
+            else:
+                fn_print("🎲 当前没有可用的抽奖次数")
+        else:
+            fn_print("🚫 抽奖功能已关闭，跳过抽奖")
+
         # 显示账户总积分
         self.get_user_total_points()
