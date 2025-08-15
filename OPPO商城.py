@@ -22,6 +22,9 @@ OPPO商城服务版：
     开启抓包进入'OPPO服务小程序'，抓包cookie
     变量oppo_service_cookie，将整个cookie放进来
     oppo_service_cookie变量格式： Cookie值   ，多个账号用@隔开
+    
+    在activity_base.py配置中控制是否抽奖，全局控制与单独控制
+    若某个活动中无is_luckyDraw，则遵循全局的配置
 """
 import random
 import time
@@ -38,7 +41,6 @@ from sendNotify import send_notification_message_collection
 oppo_cookies = get_env("oppo_cookie", "@")
 oppo_applet_cookies = get_env("oppo_applet_cookie", "@")
 oppo_service_cookies = get_env("oppo_service_cookie", "@")
-is_luckyDraw = True  # 是否开启抽奖
 
 
 class OppoAppActivity(BaseActivity):
