@@ -7,6 +7,7 @@ from activity_base import BaseActivity, ACTIVITY_CONFIG
 import httpx
 from fn_print import fn_print
 
+
 class OppoServiceActivity(BaseActivity):
     def __init__(self, cookie):
         self.cookie = cookie
@@ -26,7 +27,7 @@ class OppoServiceActivity(BaseActivity):
         }
         self.client = httpx.Client(base_url="https://service-cms.oppo.com", headers=headers, verify=False)
         config = ACTIVITY_CONFIG.get("oppo_service", {})
-        super().__init__(self.client, config)
+        super().__init__(cookie, self.client, config)
 
     def get_activity_info(self):
         try:

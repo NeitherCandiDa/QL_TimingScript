@@ -63,7 +63,7 @@ class OppoAppActivity(BaseActivity):
             'Cookie': self.cookie
         }
         self.client = httpx.Client(base_url="https://hd.opposhop.cn", verify=False, headers=headers, timeout=60)
-        super().__init__(self.client, task_config)
+        super().__init__(cookie, self.client, task_config)
 
     def validate_level(self, level):
         valid_levels = ["普卡", "银卡会员", "金钻会员"]
@@ -146,7 +146,7 @@ class OppoAppletActivity(BaseActivity):
         }
         import httpx
         self.client = httpx.Client(base_url="https://hd.opposhop.cn", verify=False, headers=headers, timeout=60)
-        super().__init__(self.client, task_config)
+        super().__init__(g_applet_cookie, self.client, task_config)
 
 
 def batch_run_and_collect(cls, cookies, configs=None):
