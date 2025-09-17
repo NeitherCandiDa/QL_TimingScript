@@ -64,7 +64,7 @@ ACTIVITY_CONFIG = {
 
 
 class BaseActivity:
-    def __init__(self, client, config):
+    def __init__(self, cookie, client, config):
         self.client = client
         self.config = config
         self.activity_id = None
@@ -73,6 +73,7 @@ class BaseActivity:
         self.sign_in_activity_id = None
         self.reservation_activity_id = None
         self.user_name = None
+        self.level = None  # 默认没有等级，子类可以设置
 
     def get_activity_url(self, url, k, v):
         try:
@@ -134,42 +135,65 @@ class BaseActivity:
             task_field = next((cmp for cmp in task_cmps if "Task" in cmp), None)
             raffle_field = next((cmp for cmp in task_cmps if "Raffle" in cmp), None)
             sign_in_fields = [cmp for cmp in task_cmps if "SignIn" in cmp]
-            if len(sign_in_fields) == 3:
-                if self.level == "普卡":
-                    sign_in_field = sign_in_fields[0]
-                elif self.level == "银卡会员":
-                    sign_in_field = sign_in_fields[1]
-                elif self.level == "金钻会员":
-                    sign_in_field = sign_in_fields[2]
-            else:
-                sign_in_field = sign_in_fields[0]
+            sign_in_field = self._get_sign_in_field(sign_in_fields)
             reservation_field = next((cmp for cmp in task_cmps if "Appointment" in cmp), None)
-            if task_field:
-                try:
-                    self.activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
-                except KeyError:
-                    fn_print("⚠️任务ID解析失败")
-            if raffle_field:
-                try:
-                    self.raffle_id = dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
-                except KeyError:
-                    fn_print("⚠️抽奖ID解析失败")
-            if sign_in_field:
-                try:
-                    self.sign_in_activity_id = dsl_json['byId'][sign_in_field]['attr']['activityInfo']['activityId']
-                except KeyError:
-                    fn_print("⚠️签到ID解析失败")
-            if reservation_field:
-                try:
-                    self.reservation_activity_id = \
-                        dsl_json['byId'][reservation_field]['attr']['reserveGoodsAppointment'][
-                            'goodsReserveActivityInfo'][
-                            'activityId']
-                except KeyError:
-                    fn_print("⚠️预约ID解析失败")
-            self.jimuld_id = dsl_json['activityId']
+            
+            # 获取各种 ID
+            self._extract_activity_ids(dsl_json, task_field, raffle_field, sign_in_field, reservation_field)
         except Exception as e:
             fn_print(f"获取{self.config['raffle_name']}活动ID时出错: {e}")
+
+    def _extract_activity_ids(self, dsl_json, task_field, raffle_field, sign_in_field, reservation_field):
+        """
+        提取各种活动ID
+        """
+        if task_field:
+            try:
+                self.activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
+            except KeyError:
+                fn_print("⚠️任务ID解析失败")
+        if raffle_field:
+            try:
+                self.raffle_id = dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
+            except KeyError:
+                fn_print("⚠️抽奖ID解析失败")
+        if sign_in_field:
+            try:
+                self.sign_in_activity_id = dsl_json['byId'][sign_in_field]['attr']['activityInfo']['activityId']
+            except KeyError:
+                fn_print("⚠️签到ID解析失败")
+        if reservation_field:
+            try:
+                self.reservation_activity_id = \
+                    dsl_json['byId'][reservation_field]['attr']['reserveGoodsAppointment'][
+                        'goodsReserveActivityInfo'][
+                        'activityId']
+            except KeyError:
+                fn_print("⚠️预约ID解析失败")
+        self.jimuld_id = dsl_json['activityId']
+
+    def _get_sign_in_field(self, sign_in_fields):
+        """
+        获取签到字段，子类可以重写此方法来实现自定义逻辑
+        """
+        if len(sign_in_fields) == 1:
+            return sign_in_fields[0]
+        elif len(sign_in_fields) == 0:
+            return None
+        elif len(sign_in_fields) == 3 and self.level:
+            # 有等级信息时，根据等级选择对应的签到字段
+            if self.level == "普卡":
+                return sign_in_fields[0]
+            elif self.level == "银卡会员":
+                return sign_in_fields[1]
+            elif self.level == "金钻会员":
+                return sign_in_fields[2]
+            else:
+                fn_print("⚠️未找到用户的会员等级, 无法执行签到")
+                return None
+        else:
+            # 默认选择第一个
+            return sign_in_fields[0] if sign_in_fields else None
 
     def get_task_list(self):
         """获取任务列表"""
@@ -493,16 +517,16 @@ class BaseActivity:
             fn_print("🚫 抽奖功能已关闭，跳过抽奖")
         
         # 抽卡
-        if self.config["draw_card"]:
-            count = self.get_draw_card_count(1958427301926539264)
-            if count > 0:
-                fn_print(f"🎴 开始抽卡，共{count}次")
-                for i in range(count):
-                    fn_print(f"第{i + 1}次抽卡：", end="")
-                    self.draw_card(1958427301926539264)
-                    time.sleep(1.5)
-            else:
-                fn_print("🎴 当前没有可用的抽卡次数")
+        # if self.config["draw_card"]:
+        #     count = self.get_draw_card_count(1958427301926539264)
+        #     if count > 0:
+        #         fn_print(f"🎴 开始抽卡，共{count}次")
+        #         for i in range(count):
+        #             fn_print(f"第{i + 1}次抽卡：", end="")
+        #             self.draw_card(1958427301926539264)
+        #             time.sleep(1.5)
+        #     else:
+        #         fn_print("🎴 当前没有可用的抽卡次数")
         
         # 显示账户总积分
         self.get_user_total_points()
