@@ -11,14 +11,25 @@ from fn_print import fn_print
 ACTIVITY_CONFIG = {
 
     "is_luckyDraw": True,  # 是否开启抽奖（所有活动的抽奖）
+    "special_conf": ['积分乐园', 'OPPO Find X9 系列新品上市'],  # 特殊任务配置
 
     "oppo_app": {
         "APP签到": {
             "bp_url": "/bp/b371ce270f7509f0",
             "raffle_name": "APP签到"
         },
+        "积分乐园": {
+            "bp_url": "/bp/b371ce270f7509f0",
+            "raffle_name": "积分乐园",
+            "is_luckyDraw": False
+        },
     },
     "oppo_applet": {
+        "新品预约": {
+            "bp_url": "/bp/0bff5d7a0cfc6953",
+            "raffle_name": "OPPO Find X9 系列新品上市",
+            "is_luckyDraw": True  # 是否开启抽奖（单独控制某个活动是否抽奖）
+        },
         "签到赢好礼": {
             "bp_url": {
                 "url": "https://msec.opposhop.cn/configs/web/advert/300003",
@@ -33,25 +44,12 @@ ACTIVITY_CONFIG = {
                 "activity_area": "福利专区",
                 "activity_name": "窄渠道"
             },
-            "raffle_name": "小程序专享福利"
-        },
-        "省心狂补节": {
-            "bp_url": "/bp/da5c14bd85779c05",
-            "raffle_name": "OPPO 省心狂补节",
-            "is_luckyDraw": True    # 是否开启抽奖（单独控制某个活动是否抽奖）
+            "raffle_name": "小程序专享福利",
+            "is_luckyDraw": False
         },
         "莎莎企业": {
             "bp_url": "/bp/457871c72cb6ccd9",
             "raffle_name": "莎莎企业 夏日奇旅"
-        },
-        "海洋「琦」遇": {
-            "bp_url": "/bp/3859e6f1cfe2a4ab",
-            "raffle_name": "海洋「琦」遇 人鱼送礼"
-        },
-        "积分乐园": {
-            "bp_url": "/bp/b371ce270f7509f0",
-            "raffle_name": "积分乐园",
-            "is_luckyDraw": False
         },
         "排球少年!!联名定制产品图鉴": {
             "bp_url": "/bp/e0e8a5a074b18a45",
@@ -73,6 +71,7 @@ class BaseActivity:
         self.raffle_id = None
         self.jimuld_id = None
         self.sign_in_activity_id = None
+        self.reservation_activity_id = None
         self.user_name = None
 
     def get_activity_url(self, url, k, v):
@@ -110,8 +109,8 @@ class BaseActivity:
             response.raise_for_status()
             html = response.text
             # 特殊任务处理
-            # worryFreeCrazySupplement 需要动态解析 creditsAddActionId/creditsDeductActionId
-            if self.config.get('raffle_name') in ['OPPO 省心狂补节', 'OPPO K13 Turbo 系列新品上市']:
+            # 需要动态解析 creditsAddActionId/creditsDeductActionId
+            if self.config.get('raffle_name') in ACTIVITY_CONFIG.get("special_conf"):
                 app_pattern = r'window\.__APP__\s*=\s*({.*?});'
                 app_match = re.search(app_pattern, html, re.DOTALL)
                 if app_match:
@@ -119,7 +118,7 @@ class BaseActivity:
                     # 动态注入到 config['draw_extra_params']
                     if 'draw_extra_params' not in self.config:
                         self.config['draw_extra_params'] = {}
-                    self.config['draw_extra_params']['business'] = 1
+                    self.config['draw_extra_params']['business'] = app_json.get('business')
                     self.config['draw_extra_params']['creditsAddActionId'] = app_json.get('scoreId', {}).get(
                         'creditsAddActionId')
                     self.config['draw_extra_params']['creditsDeductActionId'] = app_json.get('scoreId', {}).get(
@@ -134,7 +133,17 @@ class BaseActivity:
             task_cmps = dsl_json.get("cmps", [])
             task_field = next((cmp for cmp in task_cmps if "Task" in cmp), None)
             raffle_field = next((cmp for cmp in task_cmps if "Raffle" in cmp), None)
-            sign_in_field = next((cmp for cmp in task_cmps if "SignIn" in cmp), None)
+            sign_in_fields = [cmp for cmp in task_cmps if "SignIn" in cmp]
+            if len(sign_in_fields) == 3:
+                if self.level == "普卡":
+                    sign_in_field = sign_in_fields[0]
+                elif self.level == "银卡会员":
+                    sign_in_field = sign_in_fields[1]
+                elif self.level == "金钻会员":
+                    sign_in_field = sign_in_fields[2]
+            else:
+                sign_in_field = sign_in_fields[0]
+            reservation_field = next((cmp for cmp in task_cmps if "Appointment" in cmp), None)
             if task_field:
                 try:
                     self.activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
@@ -150,6 +159,14 @@ class BaseActivity:
                     self.sign_in_activity_id = dsl_json['byId'][sign_in_field]['attr']['activityInfo']['activityId']
                 except KeyError:
                     fn_print("⚠️签到ID解析失败")
+            if reservation_field:
+                try:
+                    self.reservation_activity_id = \
+                        dsl_json['byId'][reservation_field]['attr']['reserveGoodsAppointment'][
+                            'goodsReserveActivityInfo'][
+                            'activityId']
+                except KeyError:
+                    fn_print("⚠️预约ID解析失败")
             self.jimuld_id = dsl_json['activityId']
         except Exception as e:
             fn_print(f"获取{self.config['raffle_name']}活动ID时出错: {e}")
@@ -176,9 +193,15 @@ class BaseActivity:
         if not self.sign_in_activity_id:
             return
         try:
+            paylaod = {
+                "activityId": self.sign_in_activity_id
+            }
+            if self.config.get('draw_extra_params'):
+                paylaod['business'] = self.config.get("draw_extra_params").get('business')
+                paylaod['creditsAddActionId'] = self.config.get("draw_extra_params").get('creditsAddActionId')
             response = self.client.post(
                 url="/api/cn/oapi/marketing/cumulativeSignIn/signIn",
-                json={"activityId": self.sign_in_activity_id}
+                json=paylaod
             )
             response.raise_for_status()
             data = response.json()
@@ -330,6 +353,42 @@ class BaseActivity:
         except Exception as e:
             fn_print(f"\t\t>>> 抽奖时出错: {e}")
 
+    def get_draw_card_count(self, activityId):
+        """获取抽卡次数"""
+        if not activityId:
+            fn_print("⚠️未获取到抽卡ID，无法获取抽卡次数")
+            return 0
+        try:
+            response = self.client.get(
+                url=f"/marketing/collectCard/getDrawCardCount?activityId={activityId}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"剩余抽卡次数：{data.get('data')}")
+                return data.get('data')
+            else:
+                fn_print(f"获取剩余抽卡次数失败！-> {data.get('message')}")
+                return 0
+        except Exception as e:
+            fn_print(f"获取抽卡次数时出错: {e}")
+            return 0
+
+    def draw_card(self, activityId):
+        """抽卡"""
+        try:
+            response = self.client.post(
+                url=f"/marketing/collectCard/pull?activityId={activityId}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"\t\t>>> 🎴抽卡成功！")
+            else:
+                fn_print(f"\t\t>>> 抽卡失败！-> {data.get('message')}")
+        except Exception as e:
+            fn_print(f"抽卡时出错: {e}")
+
     def is_login(self):
         """检测Cookie是否有效，通用实现"""
         try:
@@ -379,6 +438,28 @@ class BaseActivity:
         # 如果单独活动没有配置，则使用全局配置
         return ACTIVITY_CONFIG.get('is_luckyDraw', True)
 
+    def reservation_new_products(self, activityId):
+        """ 预约新商品 """
+        if not self.reservation_activity_id:
+            return
+        try:
+            response = self.client.post(
+                url=f"/api/cn/oapi/marketing/reserve/materials/reserveMaterials",
+                json={
+                    "activityId": activityId,
+                    "reserveType": 2,
+                    "reserveChannel": "积木页",
+                    "reserveComp": "预约组件",
+                    "reserveMaterialScene": 2
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(data.get('data').get('actions')[0].get('actionInfo'))
+        except Exception as e:
+            fn_print(f"预约新商品时出错: {e}")
+
     def run(self):
         # 首先检查登录状态和获取用户信息
         if not self.is_login():
@@ -389,17 +470,18 @@ class BaseActivity:
 
         self.get_activity_info()
         self.sign_in()
+        self.reservation_new_products(self.reservation_activity_id)
         if hasattr(self, 'handle_sign_in_award'):
             self.handle_sign_in_award()
         self.handle_task()
-        
+
         # 根据配置决定是否进行抽奖
         if self.should_draw_lottery():
             draw_count = self.get_draw_count()
             if draw_count > 0:
                 fn_print(f"🎲 开始抽奖，共{draw_count}次")
                 for i in range(draw_count):
-                    fn_print(f"第{i+1}次抽奖：", end="")
+                    fn_print(f"第{i + 1}次抽奖：", end="")
                     if self.config.get('draw_extra_params'):
                         self.draw_lottery(**self.config['draw_extra_params'])
                     else:
@@ -409,6 +491,18 @@ class BaseActivity:
                 fn_print("🎲 当前没有可用的抽奖次数")
         else:
             fn_print("🚫 抽奖功能已关闭，跳过抽奖")
-
+        
+        # 抽卡
+        if self.config["draw_card"]:
+            count = self.get_draw_card_count(1958427301926539264)
+            if count > 0:
+                fn_print(f"🎴 开始抽卡，共{count}次")
+                for i in range(count):
+                    fn_print(f"第{i + 1}次抽卡：", end="")
+                    self.draw_card(1958427301926539264)
+                    time.sleep(1.5)
+            else:
+                fn_print("🎴 当前没有可用的抽卡次数")
+        
         # 显示账户总积分
         self.get_user_total_points()
