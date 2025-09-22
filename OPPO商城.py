@@ -26,7 +26,9 @@ OPPO商城服务版：
     在activity_base.py配置中控制是否抽奖，全局控制与单独控制
     若某个活动中无is_luckyDraw，则遵循全局的配置
 """
+import json
 import random
+import re
 import time
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
@@ -115,6 +117,156 @@ class OppoAppActivity(BaseActivity):
             except Exception as e:
                 fn_print(f"❌浏览商品时出错: {e}")
 
+    def get_collect_card_activity_info(self, activityId):
+        """ 获取抽卡活动信息 """
+        try:
+            response = self.client.get(
+                url=f"https://msec.opposhop.cn/marketing/collectCard/queryActivityById?activityId={activityId}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            collect_card_activity_id = (data.get('data')
+                                        .get('collectCardActivityBasicInfo')
+                                        .get('taskConfiguration')
+                                        .get('taskActivityId'))
+            card_info_list: list = (data.get('data')
+                                    .get('collectCardActivityBasicInfo')
+                                    .get('cardInfoList'))
+            msgs = ""
+            can_synthesize = True   # 是否可合成
+            for card_info in card_info_list:
+                card_name = card_info.get('cardName')  # 卡片名称
+                card_num = card_info.get('num')  # 持有卡片数量
+                user_collect_card_info_list = card_info.get('userCollectCardInfoList')
+                msgs += f"【{card_name}】卡片持有{card_num}张！\n"
+                if card_num < 1:
+                    can_synthesize = False
+            if can_synthesize and len(card_info_list) > 0:
+                msgs += "卡片已集齐，可进行卡片合成！"
+            return collect_card_activity_id, card_info_list, can_synthesize, msgs
+        except Exception as e:
+            fn_print(f"获取抽卡活动ID时出错: {e}")
+            return None
+
+    def get_collect_card_task_list(self, activityId):
+        """ 获取抽卡的任务列表 """
+        if not activityId:
+            return []
+        try:
+            response = self.client.get(
+                url=f"https://msec.opposhop.cn/marketing/task/queryTaskList?source=c&activityId={activityId}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            task_list_info = data.get('data', {}).get('taskDTOList', [])
+            return task_list_info
+        except Exception as e:
+            fn_print(f"获取任务列表时出错: {e}")
+            return []
+
+    def complete_draw_card_task(self, task_name, task_id, activity_id, task_type):
+        try:
+            response = self.client.get(
+                url=f"https://msec.opposhop.cn/marketing/taskReport/signInOrShareTask?taskId={task_id}&activityId={activity_id}&taskType={task_type}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"✅小程序任务【{task_name}】完成！")
+            else:
+                fn_print(f"❌小程序任务【{task_name}】失败！-> {data.get('message')}")
+        except Exception as e:
+            fn_print(f"完成小程序任务时出错: {e}")
+
+    def receive_draw_card_reward(self, task_name, task_id, activity_id):
+        try:
+            response = self.client.get(
+                url=f"https://msec.opposhop.cn/marketing/task/receiveAward?taskId={task_id}&activityId={activity_id}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"✅小程序任务【{task_name}】奖励领取成功")
+            else:
+                fn_print(f"❌小程序任务【{task_name}】奖励领取失败-> {data.get('message')}")
+        except Exception as e:
+            fn_print(f"领取小程序任务奖励时出错: {e}")
+
+    def handle_collect_card_task(self, collect_card_activity_id):
+        task_list = self.get_collect_card_task_list(collect_card_activity_id)
+        for task in task_list:
+            task_type = task.get('taskType')
+            task_name = task.get('taskName')
+            task_id = task.get('taskId')
+            task_activiity_id = task.get('activityId')
+            if task_type in [1, 2, 3, 11]:
+                self.complete_draw_card_task(task_name, task_id, task_activiity_id, task_type)
+                time.sleep(1)
+                self.receive_draw_card_reward(task_name, task_id, task_activiity_id)
+            else:
+                fn_print(f"【{task_name}】任务暂不支持，‘{task_type}’类型任务不支持‼️")
+
+    def get_draw_card_count(self, activityId):
+        """ 获取抽卡次数 """
+        try:
+            response = self.client.get(
+                url=f"https://msec.opposhop.cn/marketing/collectCard/getDrawCardCount?activityId={activityId}"
+            )
+            response.raise_for_status()
+            return response.json().get('data', 0)
+        except Exception as e:
+            fn_print(f"获取抽卡次数时出错: {e}")
+            return 0
+
+    def draw_card(self, activityId):
+        """抽卡"""
+        try:
+            response = self.client.post(
+                url=f"https://msec.opposhop.cn/marketing/collectCard/pull?activityId={activityId}"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"\t\t>>> 🎴抽卡成功！获得【{data.get('data').get('cardName')}】")
+            else:
+                fn_print(f"\t\t>>> {data.get('message')}")
+        except Exception as e:
+            fn_print(f"抽卡时出错: {e}")
+    
+    def collect_card_sign_in(self):
+        """ 周年签到 """
+        try:
+            response = self.client.get(
+                url=f"https://photoparty.opposhop.cn/api/public/index.php/supervip2507/api/doSign?jimuid=12760"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get('code') == 200:
+                fn_print(f"✅ 周年签到成功！")
+            else:
+                fn_print(f"❌ 周年签到失败！-> {data.get('msg')}")
+        except Exception as e:
+            fn_print(f"周年签到时出错: {e}")
+
+    def handle_collect_card(self):
+        activiry_id = "1958427301926539264"
+        collect_card_activity_id, card_info_list, can_synthesize, msg = self.get_collect_card_activity_info(
+            activiry_id)
+        self.collect_card_sign_in()
+        self.handle_collect_card_task(collect_card_activity_id)
+        draw_card_count = self.get_draw_card_count(activiry_id)
+        if draw_card_count > 0:
+            fn_print(f"🎴 开始抽卡，共{draw_card_count}次")
+            for i in range(draw_card_count):
+                self.draw_card(activiry_id)
+                time.sleep(1.5)
+        else:
+            fn_print(f"没有抽卡次数了！")
+        collect_card_activity_id, card_info_list, can_synthesize, msg = self.get_collect_card_activity_info(
+            activiry_id)
+        fn_print(msg)
+        # TODO 合成卡片
+
     def handle_task(self):
         task_list = self.get_task_list()
         for task in task_list:
@@ -151,12 +303,20 @@ class OppoAppletActivity(BaseActivity):
 
 def batch_run_and_collect(cls, cookies, configs=None):
     if configs:
-        for task_key_, task_config_ in configs.items():
-            for i, cookie_ in enumerate(cookies, 1):
+        # 对于带有多个活动配置的类（如 OPPO App、小程序），逐账户执行所有配置；
+        # 仅当类实现了 handle_collect_card 时，在每个账户的所有配置执行完后调用一次，避免重复。
+        for i, cookie_ in enumerate(cookies, 1):
+            for task_key_, task_config_ in configs.items():
                 fn_print(f"=======开始执行{cls.__name__}任务：{task_key_} (账户{i}/{len(cookies)})=======")
                 obj = cls(cookie_, task_config_)
                 obj.run()
-                fn_print(f"=======账户{i}执行完毕=======\n")
+            # 所有配置跑完后，如支持抽卡收集，仅执行一次
+            if hasattr(obj, 'handle_collect_card') and callable(getattr(obj, 'handle_collect_card')):
+                try:
+                    obj.handle_collect_card()
+                except Exception as _:
+                    pass
+            fn_print(f"=======账户{i}执行完毕=======\n")
     else:
         for i, cookie_ in enumerate(cookies, 1):
             fn_print(f"=======开始执行{cls.__name__} (账户{i}/{len(cookies)})=======")
@@ -168,6 +328,7 @@ def batch_run_and_collect(cls, cookies, configs=None):
 if __name__ == '__main__':
     if oppo_cookies:
         from activity_base import ACTIVITY_CONFIG
+
         batch_run_and_collect(OppoAppActivity, oppo_cookies, ACTIVITY_CONFIG.get("oppo_app", {}))
     else:
         fn_print("‼️未配置OPPO商城APP的Cookie，跳过OPPO商城APP签到‼️")
@@ -179,6 +340,7 @@ if __name__ == '__main__':
 
     if oppo_service_cookies:
         from oppo_service import OppoServiceActivity
+
         batch_run_and_collect(OppoServiceActivity, oppo_service_cookies)
     else:
         fn_print("‼️未配置OPPO服务的Cookie，跳过OPPO服务签到‼️")
