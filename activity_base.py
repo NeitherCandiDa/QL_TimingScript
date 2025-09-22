@@ -137,7 +137,7 @@ class BaseActivity:
             sign_in_fields = [cmp for cmp in task_cmps if "SignIn" in cmp]
             sign_in_field = self._get_sign_in_field(sign_in_fields)
             reservation_field = next((cmp for cmp in task_cmps if "Appointment" in cmp), None)
-            
+
             # 获取各种 ID
             self._extract_activity_ids(dsl_json, task_field, raffle_field, sign_in_field, reservation_field)
         except Exception as e:
@@ -377,42 +377,6 @@ class BaseActivity:
         except Exception as e:
             fn_print(f"\t\t>>> 抽奖时出错: {e}")
 
-    def get_draw_card_count(self, activityId):
-        """获取抽卡次数"""
-        if not activityId:
-            fn_print("⚠️未获取到抽卡ID，无法获取抽卡次数")
-            return 0
-        try:
-            response = self.client.get(
-                url=f"/marketing/collectCard/getDrawCardCount?activityId={activityId}"
-            )
-            response.raise_for_status()
-            data = response.json()
-            if data.get('code') == 200:
-                fn_print(f"剩余抽卡次数：{data.get('data')}")
-                return data.get('data')
-            else:
-                fn_print(f"获取剩余抽卡次数失败！-> {data.get('message')}")
-                return 0
-        except Exception as e:
-            fn_print(f"获取抽卡次数时出错: {e}")
-            return 0
-
-    def draw_card(self, activityId):
-        """抽卡"""
-        try:
-            response = self.client.post(
-                url=f"/marketing/collectCard/pull?activityId={activityId}"
-            )
-            response.raise_for_status()
-            data = response.json()
-            if data.get('code') == 200:
-                fn_print(f"\t\t>>> 🎴抽卡成功！")
-            else:
-                fn_print(f"\t\t>>> 抽卡失败！-> {data.get('message')}")
-        except Exception as e:
-            fn_print(f"抽卡时出错: {e}")
-
     def is_login(self):
         """检测Cookie是否有效，通用实现"""
         try:
@@ -491,7 +455,6 @@ class BaseActivity:
         self.get_user_info()
         if self.user_name:
             fn_print(f"🔹 当前账户：{self.user_name}")
-
         self.get_activity_info()
         self.sign_in()
         self.reservation_new_products(self.reservation_activity_id)
@@ -515,18 +478,6 @@ class BaseActivity:
                 fn_print("🎲 当前没有可用的抽奖次数")
         else:
             fn_print("🚫 抽奖功能已关闭，跳过抽奖")
-        
-        # 抽卡
-        # if self.config["draw_card"]:
-        #     count = self.get_draw_card_count(1958427301926539264)
-        #     if count > 0:
-        #         fn_print(f"🎴 开始抽卡，共{count}次")
-        #         for i in range(count):
-        #             fn_print(f"第{i + 1}次抽卡：", end="")
-        #             self.draw_card(1958427301926539264)
-        #             time.sleep(1.5)
-        #     else:
-        #         fn_print("🎴 当前没有可用的抽卡次数")
-        
+
         # 显示账户总积分
         self.get_user_total_points()
