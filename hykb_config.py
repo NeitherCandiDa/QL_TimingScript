@@ -20,8 +20,8 @@ API_ENDPOINTS = {
     "watering": "/n/hykb/cornfarm/ajax_sign.php",
     "plant": "/n/hykb/cornfarm/ajax_plant.php",
     "daily_task": "/n/hykb/cornfarm/ajax_daily.php",
-    "get_goods": "https://shop.3839.com/index.php?c=Index&a=initCard",
-    "buy_seeds": "/n/hykb/bmhstore2/inc/virtual/ajaxVirtual.php"
+    "get_goods": "https://huodong3.3839.com/n/hykb/cornfarm/index.php?imm=0",
+    "buy_seeds": "https://shop.3839.com/index.php?c=OrderVirtual&a=createOrder"
 }
 
 # 任务类型配置

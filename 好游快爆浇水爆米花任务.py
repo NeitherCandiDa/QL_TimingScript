@@ -46,6 +46,7 @@ class HaoYouKuaiBao:
         )
         __user_info = self.__user_info()
         self.user_name: str = __user_info.get("user") if __user_info else ""
+        self.seed = int(__user_info.get("seed") if __user_info else 0)
         # cookie 统一约定：第 5 段为 device
         self.device: str = cookie.split("|")[4] if "|" in cookie else ""
 
@@ -81,7 +82,8 @@ class HaoYouKuaiBao:
                 return {
                     "user": u_response["config"]["name"],
                     "uid": u_response["config"]["uid"],
-                    "device_id": u_response["config"]["deviceid"]
+                    "device_id": u_response["config"]["deviceid"],
+                    "seed": u_response["config"]["seed"]
                 }
             else:
                 print("好游快爆-获取用户信息出现错误：{}".format(u_response))
@@ -161,7 +163,7 @@ class HaoYouKuaiBao:
                 fn_print("={}=, 播种成功🌾🌾🌾".format(self.user_name))
                 return 1
             else:
-                if p_response.get('seed') == '0':
+                if self.seed == 0:
                     fn_print("={}=, 种子已用完".format(self.user_name))
                     return -1
                 else:
@@ -177,12 +179,27 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
-            s_response = self._post(
-                url=API_ENDPOINTS["get_goods"],
-                content=f"pid=1660&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+            html = self._get_text(
+                url=API_ENDPOINTS["get_goods"]
             )
-            if s_response['code'] == 200:
-                return s_response['data']['store_id'], s_response['data']['product_name']
+            soup = BeautifulSoup(html, "html.parser")
+            link_element = soup.find('a', class_='corn1SeedBtn2')
+            if link_element:
+                href = link_element['href']
+                html2 = self._get_text(
+                    url=href
+                )
+                soup2 = BeautifulSoup(html2, "html.parser")
+                # <script type='text/javascript'>window.location='https://shop.3839.com/?id=8220';</script>
+                script_element = soup2.find('script', type='text/javascript')
+                if script_element and script_element.string:
+                    id_match = re.search(r'id=(\d+)', script_element.string)
+                    if id_match:
+                        id = id_match.group(1)
+                        return id
+                    fn_print("❌未找到种子商品pid")
+            else:
+                fn_print("❌未检索到种子商品的链接")
         except Exception as e:
             fn_print("好游快爆-获取商品id出现错误：{}".format(e))
 
@@ -193,26 +210,25 @@ class HaoYouKuaiBao:
         :return: 
         """
         # 获取种子商品id
-        goods = await self.get_goods()
-        if not goods:
+        goods_id = await self.get_goods()
+        if not goods_id:
             fn_print(f"={self.user_name}=, ❌获取商品信息失败，无法购买种子")
             return False
-        goods_id, goods_name = goods
         cbs_response = self._post(
             url=API_ENDPOINTS["buy_seeds"],
-            content=f"ac=checkExchange&gid={goods_id}&t={datetime.now().strftime('%Y-%m-%d %H:%M:%S')}&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+            content=f"id={goods_id}&smdeviceid=BGqqKPzBFBOmh5XVCbHmtfwN36lNBM7OPXnLpmlz%2F8%2BfXP2dNAnMG8vZjG5lMM%2FRW4%2FLE1P2UT9TJlCfx8yOvOg%3D%3D&version=1.5.7.807&r={self._rand()}&client=1&scookie={self._encode_cookie()}&device={self.device}"
         )
-        if cbs_response['key'] != "200" and cbs_response['msg'] != "验证通过":
+        if cbs_response['key'] != "200":
             fn_print(f"={self.user_name}=, ❌购买种子出现错误：{cbs_response}")
             return False
         else:
             # 购买种子
             bs_response = self._post(
                 url=API_ENDPOINTS["buy_seeds"],
-                content=f"ac=exchange&t={datetime.now().strftime('%Y-%m-%d %H:%M:%S')}&r={self._rand()}&goodsid={goods_id}&scookie={self._encode_cookie()}&device={self.device}"
+                content=f"id={goods_id}&smdeviceid=BGqqKPzBFBOmh5XVCbHmtfwN36lNBM7OPXnLpmlz%2F8%2BfXP2dNAnMG8vZjG5lMM%2FRW4%2FLE1P2UT9TJlCfx8yOvOg%3D%3D&version=1.5.7.807&r={self._rand()}&client=1&scookie={self._encode_cookie()}&device={self.device}"
             )
             if bs_response['key'] == 200:
-                fn_print(f"={self.user_name}=, 购买种子成功，还剩下🍿爆米花{bs_response['bmh']}个")
+                fn_print(f"={self.user_name}=, 购买种子成功")
                 return True
             else:
                 fn_print(f"={self.user_name}=, ❌购买种子失败：{bs_response}")
