@@ -16,7 +16,8 @@ ACTIVITY_CONFIG = {
     "oppo_app": {
         "APP签到": {
             "bp_url": "/bp/b371ce270f7509f0",
-            "raffle_name": "APP签到"
+            "raffle_name": "APP签到",
+            "is_luckyDraw": False
         },
         "积分乐园": {
             "bp_url": "/bp/b371ce270f7509f0",
