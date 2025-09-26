@@ -11,7 +11,7 @@ from fn_print import fn_print
 ACTIVITY_CONFIG = {
 
     "is_luckyDraw": True,  # 是否开启抽奖（所有活动的抽奖）
-    "special_conf": ['积分乐园', 'OPPO Find X9 系列新品上市'],  # 特殊任务配置
+    "special_conf": ['积分乐园', 'OPPO Find X9 系列新品上市', '一加宠粉福利站'],  # 特殊任务配置
 
     "oppo_app": {
         "APP签到": {
@@ -25,6 +25,10 @@ ACTIVITY_CONFIG = {
         },
     },
     "oppo_applet": {
+        "一加宠粉福利站": {
+            "bp_url": "/bp/adfdd92edbb1b2ee",
+            "raffle_name": "一加宠粉福利站"
+        },
         "新品预约": {
             "bp_url": "/bp/0bff5d7a0cfc6953",
             "raffle_name": "OPPO Find X9 系列新品上市",
@@ -298,7 +302,7 @@ class BaseActivity:
             task_type = task.get('taskType')
             if task_type in [6, 14, 15, 17]:  # 黑卡任务和学生认证
                 continue
-            if task_type == 1 or task_type == 2 or task_type == 4:
+            if task_type in [0, 1, 2, 4]:
                 self.complete_task(task_name, task_id, activity_id, task_type)
                 time.sleep(2)
                 self.receive_reward(task_name, task_id, activity_id)
