@@ -41,7 +41,8 @@ ACTIVITY_CONFIG = {
                 "activity_area": "福利专区",
                 "activity_name": "签到"
             },
-            "raffle_name": "签到赢好礼"
+            "raffle_name": "签到赢好礼",
+            "is_luckyDraw": False
         },
         "专享福利": {
             "bp_url": {
