@@ -3,10 +3,10 @@
 cron: 0 0 0,12 * * *
 const $ = new Env('好游快爆');
 """
-import asyncio
 import os
 import random
 import re
+import time
 import urllib.parse
 import httpx
 
@@ -90,7 +90,7 @@ class HaoYouKuaiBao:
         except Exception as e:
             print("好游快爆-获取用户信息出现错误：{}".format(e))
 
-    async def login(self) -> Dict:
+    def login(self) -> Dict:
         """
         登录
         :return: 
@@ -105,7 +105,7 @@ class HaoYouKuaiBao:
             fn_print("好游快爆-登录出现错误：{}".format(e))
 
     # 浇水
-    async def watering(self) -> Tuple[int, int]:
+    def watering(self) -> Tuple[int, int]:
         """
         浇水
         :return: 
@@ -129,7 +129,7 @@ class HaoYouKuaiBao:
             return -1, 0
 
     # 收获
-    async def harvest(self) -> None:
+    def harvest(self) -> None:
         """
         收获
         :return: 
@@ -149,7 +149,7 @@ class HaoYouKuaiBao:
             fn_print(f"={self.user_name}=, ❌收获异常：{e}")
 
     # 播种
-    async def plant(self) -> int:
+    def plant(self) -> int:
         """
         播种
         :return: 
@@ -173,7 +173,7 @@ class HaoYouKuaiBao:
             fn_print(f"={self.user_name}=, ❌播种异常：{e}")
 
     # 获取种子商品
-    async def get_goods(self) -> Optional[Tuple[str, str]]:
+    def get_goods(self) -> Optional[str]:
         """
         获取种子商品
         :return: 
@@ -204,13 +204,13 @@ class HaoYouKuaiBao:
             fn_print("好游快爆-获取商品id出现错误：{}".format(e))
 
     # 购买种子
-    async def buy_seeds(self) -> bool:
+    def buy_seeds(self) -> bool:
         """
         购买种子
         :return: 
         """
         # 获取种子商品id
-        goods_id = await self.get_goods()
+        goods_id = self.get_goods()
         if not goods_id:
             fn_print(f"={self.user_name}=, ❌获取商品信息失败，无法购买种子")
             return False
@@ -235,7 +235,7 @@ class HaoYouKuaiBao:
                 return False
 
     # 获取今日必做推荐任务id
-    async def get_recommend_task_ids(self) -> None:
+    def get_recommend_task_ids(self) -> None:
         """
         获取今日必做推荐任务id
         :return: 
@@ -274,7 +274,7 @@ class HaoYouKuaiBao:
                     }
                 )
 
-    async def get_moreManorToDo_task_ids(self) -> None:
+    def get_moreManorToDo_task_ids(self) -> None:
         """
         获取更多庄园必做任务id
         :return: 
@@ -295,7 +295,7 @@ class HaoYouKuaiBao:
                 }
             )
 
-    async def appointment_game_task(self, recommend_task: Dict[str, str]) -> None:
+    def appointment_game_task(self, recommend_task: Dict[str, str]) -> None:
         """
         预约游戏任务
         :param recommend_task: 
@@ -311,7 +311,7 @@ class HaoYouKuaiBao:
         except Exception as e:
             fn_print(f"={self.user_name}=, 预约游戏任务调度任务异常：", e)
 
-    async def receive_yuyue_game_rewards(self, recommend_task: Dict[str, str]) -> None:
+    def receive_yuyue_game_rewards(self, recommend_task: Dict[str, str]) -> None:
         """
         领取预约游戏任务奖励
         :param recommend_task: 
@@ -329,7 +329,7 @@ class HaoYouKuaiBao:
         except Exception as e:
             fn_print(f"={self.user_name}=, 领取预约游戏任务奖励异常：", e)
 
-    async def do_tasks_by_share(self, recommend_task: Dict[str, str]) -> bool:
+    def do_tasks_by_share(self, recommend_task: Dict[str, str]) -> bool:
         """
         分享类型任务
         :param recommend_task: 
@@ -360,7 +360,7 @@ class HaoYouKuaiBao:
         except Exception as e:
             fn_print(f"={self.user_name}=, 调度任务异常：", e)
 
-    async def do_small_game_task(self, recommend_task: Dict[str, str]) -> bool:
+    def do_small_game_task(self, recommend_task: Dict[str, str]) -> bool:
         """
         免安装、即点即玩的小游戏任务
         :param recommend_task: 
@@ -381,7 +381,7 @@ class HaoYouKuaiBao:
         except Exception as e:
             fn_print(f"={self.user_name}=, 小游戏任务调度任务异常：", e)
 
-    async def receive_small_game_reward(self, recommend_task: Dict[str, str]) -> None:
+    def receive_small_game_reward(self, recommend_task: Dict[str, str]) -> None:
         """
         领取免安装、即点即玩的小游戏任务奖励
         :param recommend_task: 
@@ -398,27 +398,27 @@ class HaoYouKuaiBao:
                 fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 已经领过奖励了！")
             elif recevie_small_game_reward_response.get("key") == ERROR_CODES["NEED_HARVEST"]:  # 表示成熟度已经满了，先收割再播种，再领取小游戏任务奖励
                 # 收割
-                await self.harvest()
+                self.harvest()
                 # 播种
-                plant_status = await self.plant()
+                plant_status = self.plant()
                 if plant_status == -1:  # 没有种子
                     fn_print("={}=, 播种失败，没有种子".format(self.user_name))
                     # 购买种子
-                    await self.buy_seeds()
-                    await self.plant()
+                    self.buy_seeds()
+                    self.plant()
                 elif plant_status == 1:
                     ...
                 else:
                     fn_print("={}=, 播种失败".format(self.user_name))
                 # 领取小游戏任务奖励
-                await self.receive_small_game_reward(recommend_task)
+                self.receive_small_game_reward(recommend_task)
             else:
                 fn_print(
                     f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ❌领取任务奖励失败：{recevie_small_game_reward_response}")
         except Exception as e:
             fn_print(f"={self.user_name}=, 小游戏任务领取奖励异常：", e)
 
-    async def receive_share_task_reward(self, recommend_task: Dict[str, str]) -> None:
+    def receive_share_task_reward(self, recommend_task: Dict[str, str]) -> None:
         """
         领取分享类型的任务奖励
         :param recommend_task: 
@@ -434,82 +434,110 @@ class HaoYouKuaiBao:
             elif recevie_daily_reward_response.get("key") == ERROR_CODES["TASK_DONE"]:
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 今天已经领取过了！")
             else:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 领取任务奖励失败！")
+                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 领取任务奖励失败！-> {recevie_daily_reward_response.get('msg', recevie_daily_reward_response)}")
         except Exception as e:
             fn_print(f"={self.user_name}=, 领取任务奖励异常：", e)
 
-    async def process_share_task(self, recommend_task: Dict[str, str]) -> None:
+    def process_share_task(self, recommend_task: Dict[str, str]) -> None:
         """
         处理分享类的任务
         :param recommend_task: 分享类的任务信息
         :return: 
         """
-        await self.do_tasks_by_share(recommend_task)  # 调度任务
-        await self.receive_share_task_reward(recommend_task)  # 领取任务奖励 
+        self.do_tasks_by_share(recommend_task)  # 调度任务
+        self.receive_share_task_reward(recommend_task)  # 领取任务奖励 
 
-    async def process_yuyue_game_task(self, recommend_task: Dict[str, str]) -> None:
-        await self.appointment_game_task(recommend_task)
-        await self.receive_yuyue_game_rewards(recommend_task)
+    def process_yuyue_game_task(self, recommend_task: Dict[str, str]) -> None:
+        self.appointment_game_task(recommend_task)
+        self.receive_yuyue_game_rewards(recommend_task)
 
-    async def process_small_game_task(self, recommend_task: Dict[str, str]) -> None:
+    def process_small_game_task(self, recommend_task: Dict[str, str]) -> None:
         """
-        处理免安装、即点即玩的小游戏任务
+        处理免安装、即点即玩的小游戏任务（单个任务，已废弃）
+        现在使用批量处理方式 process_small_game_tasks_batch()
         :param recommend_task: 
         :return: 
         """
-        await self.do_small_game_task(recommend_task)
-        await asyncio.sleep(TASK_DELAYS["small_game"])  # 默认 5 分钟
-        await self.receive_small_game_reward(recommend_task)
+        self.do_small_game_task(recommend_task)
+        time.sleep(TASK_DELAYS["small_game"])  # 默认 5 分钟
+        self.receive_small_game_reward(recommend_task)
 
-    async def run_task(self) -> None:
+    def process_small_game_tasks_batch(self) -> None:
+        """
+        批量处理小游戏任务 - 优化版本
+        先启动所有小游戏任务，然后统一等待5分钟，最后统一领取奖励
+        :return: 
+        """
+        if not self.small_game_task_list:
+            return
+        
+        fn_print(f"={self.user_name}=, 开始处理 {len(self.small_game_task_list)} 个小游戏任务")
+        
+        # 启动所有小游戏任务
+        for task in self.small_game_task_list:
+            self.do_small_game_task(task)
+        
+        # 统一等待5分钟（而不是每个任务都等5分钟）
+        fn_print(f"={self.user_name}=, 小游戏任务已启动，等待5分钟后领取奖励...")
+        time.sleep(TASK_DELAYS["small_game"])
+        
+        # 领取所有小游戏任务奖励
+        for task in self.small_game_task_list:
+            self.receive_small_game_reward(task)
+
+    def run_task(self) -> None:
         """
         执行任务
         :return: 
         """
-        await self.get_recommend_task_ids()
+        self.get_recommend_task_ids()
 
-        await asyncio.gather(
-            *[self.process_share_task(task) for task in self.share_task_list], # 分享类型的任务
-            *[self.process_small_game_task(task) for task in self.small_game_task_list],    # 免安装、即点即玩的小游戏任务
-            *[self.process_yuyue_game_task(task) for task in self.appointment_game_task_list]   # 预约游戏任务
-        )
+        # 1. 先处理分享类型的任务（快速完成）
+        for task in self.share_task_list:
+            self.process_share_task(task)
+        
+        # 2. 批量处理小游戏任务（优化：统一等待5分钟）
+        self.process_small_game_tasks_batch()
+        
+        # 3. 最后处理预约游戏任务
+        for task in self.appointment_game_task_list:
+            self.process_yuyue_game_task(task)
 
-    async def run(self) -> None:
-        data = await self.login()
+    def run(self) -> None:
+        data = self.login()
         if data.get('key') == ERROR_CODES["SUCCESS"]:
             fn_print("=" * 10 + f"【{self.user_name}】登录成功" + "=" * 10)
             # 优先判断成熟度是否已满
             if data['config']['csd_jdt'] == "100%":
                 # 收获
-                await self.harvest()
-                data = await self.login()
+                self.harvest()
+                data = self.login()
             # 判断是否已播种
             if data['config']['grew'] == '-1':
-                plant_status = await self.plant()
+                plant_status = self.plant()
                 if plant_status == -1:
                     fn_print("={}=, 播种失败，没有种子".format(self.user_name))
                     # 购买种子
-                    await self.buy_seeds()
-                    await self.plant()
+                    self.buy_seeds()
+                    self.plant()
                 elif plant_status == 1:
                     ...
                 else:
                     fn_print("={}=, 播种失败".format(self.user_name))
-            await self.watering()
+            self.watering()
             fn_print("=" * 10 + f"【{self.user_name}】开始执行每日必做推荐任务" + "=" * 10)
-            await self.run_task()
+            self.run_task()
         else:
             fn_print(f"={self.user_name}=, ❌登录失败：{data}")
 
 
-async def main():
-    tasks = []
+def main():
+    """主函数：顺序执行所有用户的脚本"""
     for cookie_ in Hykb_cookie:
         hykb = HaoYouKuaiBao(cookie_)
-        tasks.append(hykb.run())
-    await asyncio.gather(*tasks)
+        hykb.run()
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
     send_notification_message_collection("好游快爆活动奖励领取通知 - {}".format(datetime.now().strftime("%Y/%m/%d")))
