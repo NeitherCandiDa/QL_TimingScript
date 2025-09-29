@@ -8,18 +8,28 @@ API_CONFIG = {
     "base_url": "https://huodong3.3839.com",
     "shop_url": "https://shop.3839.com",
     "headers": {
-        "Origin": "https://huodong3.i3839.com",
-        "Referer": "https://huodong3.3839.com/n/hykb/cornfarm/index.php?imm=0",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        'User-Agent': "Mozilla/5.0 (Linux; Android 15; PJZ110 Build/AP3A.240617.008; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/134.0.6998.135 Mobile Safari/537.36Androidkb/1.5.7.905(android;PJZ110;15;1440x2952;WiFi);@4399_sykb_android_activity@",
+        'Accept': "application/json, text/javascript, */*; q=0.01",
+        'Accept-Encoding': "gzip, deflate, br, zstd",
+        'sec-ch-ua-platform': "\"Android\"",
+        'X-Requested-With': "XMLHttpRequest",
+        'sec-ch-ua': "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Android WebView\";v=\"134\"",
+        'sec-ch-ua-mobile': "?1",
+        'Origin': "https://huodong3.3839.com",
+        'Sec-Fetch-Site': "same-origin",
+        'Sec-Fetch-Mode': "cors",
+        'Sec-Fetch-Dest': "empty",
+        'Referer': "https://huodong3.3839.com/n/hykb/cornfarm/index.php?imm=0",
+        'Accept-Language': "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 }
 
 # API 接口路径
 API_ENDPOINTS = {
-    "login": "/n/hykb/cornfarm/ajax.php",
-    "watering": "/n/hykb/cornfarm/ajax_sign.php",
-    "plant": "/n/hykb/cornfarm/ajax_plant.php",
-    "daily_task": "/n/hykb/cornfarm/ajax_daily.php",
+    "login": "https://huodong3.3839.com/n/hykb/cornfarm/ajax.php",
+    "watering": "https://huodong3.3839.com/n/hykb/cornfarm/ajax_sign.php",
+    "plant": "https://huodong3.3839.com/n/hykb/cornfarm/ajax_plant.php",
+    "daily_task": "https://huodong3.3839.com/n/hykb/cornfarm/ajax_daily.php",
     "get_goods": "https://huodong3.3839.com/n/hykb/cornfarm/index.php?imm=0",
     "buy_seeds": "https://shop.3839.com/index.php?c=OrderVirtual&a=createOrder"
 }
@@ -60,8 +70,8 @@ RETRY_CONFIG = {
 
 # 任务执行间隔
 TASK_DELAYS = {
-    "small_game": 300,  # 5分钟
-    "request_delay": 1   # 1秒
+    "small_game": 360,  # 6分钟
+    "request_delay": 1  # 1秒
 }
 
 # 响应消息模板
