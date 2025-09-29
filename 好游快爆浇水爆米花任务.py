@@ -3,24 +3,22 @@
 cron: 0 0 0,12 * * *
 const $ = new Env('好游快爆');
 """
-import os
 import random
 import re
 import time
 import urllib.parse
-import httpx
-
-from datetime import datetime
-
+import warnings
+import requests
 from bs4 import BeautifulSoup
-
+from datetime import datetime
+from typing import Dict, List, Tuple, Optional, Any
 from fn_print import fn_print
 from get_env import get_env
-from sendNotify import send_notification_message_collection
-from typing import Dict, List, Tuple, Optional
-
-# 统一配置常量（不封装 http 客户端，仅集中常量与枚举）
 from hykb_config import API_CONFIG, API_ENDPOINTS, ERROR_CODES, TASK_DELAYS
+from sendNotify import send_notification_message_collection
+from urllib3.exceptions import InsecureRequestWarning
+
+warnings.filterwarnings('ignore', category=InsecureRequestWarning)
 
 Hykb_cookie = get_env("Hykb_cookie", "@")
 
@@ -39,11 +37,9 @@ class HaoYouKuaiBao:
         self.small_game_task_list: List[Dict[str, str]] = []
         self.cookie: str = cookie
         self.headers: Dict[str, str] = API_CONFIG["headers"]
-        self.client = httpx.Client(
-            base_url=API_CONFIG["base_url"],
-            verify=False,
-            headers=self.headers
-        )
+        self.client = requests.Session()
+        self.client.headers.update(self.headers)
+        self.client.verify = False
         __user_info = self.__user_info()
         self.user_name: str = __user_info.get("user") if __user_info else ""
         self.seed = int(__user_info.get("seed") if __user_info else 0)
@@ -61,9 +57,9 @@ class HaoYouKuaiBao:
     def _encode_cookie(self) -> str:
         return urllib.parse.quote(self.cookie)
 
-    def _post(self, url: str, content: str) -> Dict:
-        """统一 POST 请求，保持原参数风格。"""
-        return self.client.post(url=url, content=content).json()
+    def _post(self, url: str, data: Any) -> Dict:
+        """统一 POST 请求"""
+        return self.client.post(url=url, data=data).json()
 
     def _get_text(self, url: str) -> str:
         return self.client.get(url).text
@@ -74,9 +70,14 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
+            payload = {
+                "ac": "login",
+                "r": self._rand(),
+                "scookie": self.cookie
+            }
             u_response = self._post(
                 url=API_ENDPOINTS["login"],
-                content=f"ac=login&r={self._rand()}&scookie={self._encode_cookie()}"
+                data=payload
             )
             if u_response.get("key") == ERROR_CODES["SUCCESS"] and u_response.get("loginStatus") == "100":
                 return {
@@ -96,10 +97,13 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
-            l_response = self._post(
-                url=API_ENDPOINTS["login"],
-                content=f"ac=login&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
-            )
+            payload = {
+                "ac": "login",
+                "r": self._rand(),
+                "scookie": self.cookie,
+                "device": self.device
+            }
+            l_response = self._post(url=API_ENDPOINTS["login"], data=payload)
             return l_response
         except Exception as e:
             fn_print("好游快爆-登录出现错误：{}".format(e))
@@ -111,9 +115,17 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
+            payload = {
+                "ac": "Sign",
+                "verison": "1.5.7.005",
+                "OpenAutoSign": "",
+                "r": self._rand(),
+                "scookie": self.cookie,
+                "device": self.device
+            }
             w_response = self._post(
                 url=API_ENDPOINTS["watering"],
-                content=f"ac=Sign&verison=1.5.7.005&OpenAutoSign=&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload
             )
             if w_response.get("key") == ERROR_CODES["SUCCESS"]:
                 fn_print("={}=, 浇水成功💧💧💧".format(self.user_name))
@@ -135,9 +147,15 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
+            payload = {
+                "ac": "Harvest",
+                "r": self._rand(),
+                "scookie": self.cookie,
+                "device": self.device
+            }
             h_response = self._post(
                 url=API_ENDPOINTS["plant"],
-                content=f"ac=Harvest&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload
             )
             if h_response.get("key") == ERROR_CODES["SUCCESS"]:
                 fn_print("={}=, 收获成功🌽🌽🌽".format(self.user_name))
@@ -155,9 +173,16 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
+            payload = {
+                "ac": "Plant",
+                "corn_id": "1",
+                "r": self._rand(),
+                "scookie": self.cookie,
+                "device": self.device
+            }
             p_response = self._post(
                 url=API_ENDPOINTS["plant"],
-                content=f"ac=Plant&corn_id=1&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload
             )
             if p_response.get("key") == ERROR_CODES["SUCCESS"]:
                 fn_print("={}=, 播种成功🌾🌾🌾".format(self.user_name))
@@ -214,9 +239,17 @@ class HaoYouKuaiBao:
         if not goods_id:
             fn_print(f"={self.user_name}=, ❌获取商品信息失败，无法购买种子")
             return False
+        payload = {
+            "id": goods_id,
+            "smdeviceid": "BGqqKPzBFBOmh5XVCbHmtfwN36lNBM7OPXnLpmlz%2F8%2BfXP2dNAnMG8vZjG5lMM%2FRW4%2FLE1P2UT9TJlCfx8yOvOg%3D%3D",
+            "version": "1.5.7.807",
+            "r": self._rand(),
+            "client": 1,
+            "scookie": self.cookie,
+        }
         cbs_response = self._post(
             url=API_ENDPOINTS["buy_seeds"],
-            content=f"id={goods_id}&smdeviceid=BGqqKPzBFBOmh5XVCbHmtfwN36lNBM7OPXnLpmlz%2F8%2BfXP2dNAnMG8vZjG5lMM%2FRW4%2FLE1P2UT9TJlCfx8yOvOg%3D%3D&version=1.5.7.807&r={self._rand()}&client=1&scookie={self._encode_cookie()}&device={self.device}"
+            data=payload
         )
         if cbs_response['key'] != "200":
             fn_print(f"={self.user_name}=, ❌购买种子出现错误：{cbs_response}")
@@ -225,7 +258,7 @@ class HaoYouKuaiBao:
             # 购买种子
             bs_response = self._post(
                 url=API_ENDPOINTS["buy_seeds"],
-                content=f"id={goods_id}&smdeviceid=BGqqKPzBFBOmh5XVCbHmtfwN36lNBM7OPXnLpmlz%2F8%2BfXP2dNAnMG8vZjG5lMM%2FRW4%2FLE1P2UT9TJlCfx8yOvOg%3D%3D&version=1.5.7.807&r={self._rand()}&client=1&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload
             )
             if bs_response['key'] == 200:
                 fn_print(f"={self.user_name}=, 购买种子成功")
@@ -240,7 +273,7 @@ class HaoYouKuaiBao:
         获取今日必做推荐任务id
         :return: 
         """
-        html = self._get_text("/n/hykb/cornfarm/index.php?imm=0")
+        html = self._get_text("https://huodong3.3839.com/n/hykb/cornfarm/index.php?imm=0")
         soup = BeautifulSoup(html, 'html.parser')
         task_list = soup.select(".taskDailyUl > li")
         for task_item in task_list:
@@ -279,7 +312,7 @@ class HaoYouKuaiBao:
         获取更多庄园必做任务id
         :return: 
         """
-        html = self._get_text("/n/hykb/cornfarm/index.php?imm=0")
+        html = self._get_text("https://huodong3.3839.com/n/hykb/cornfarm/index.php?imm=0")
         soup = BeautifulSoup(html, 'html.parser')
         task_list = soup.select(".taskYcxUl > li")
         for task_item in task_list:
@@ -302,9 +335,16 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
+            payload = {
+                'ac': "DailyGameDetail",
+                'id': recommend_task['bmh_task_id'],
+                'r': self._rand(),
+                'scookie': self.cookie,
+                'device': self.device
+            }
             daily_game_detail_response = self._post(
                 url=API_ENDPOINTS["daily_task"],
-                content=f"ac=DailyGameDetail&id={recommend_task['bmh_task_id']}&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload
             )
             if daily_game_detail_response.get("key") == ERROR_CODES["SUCCESS"]:
                 fn_print(f"={self.user_name}=, 预约游戏任务成功，任务名称：{recommend_task['bmh_task_title']}")
@@ -317,15 +357,25 @@ class HaoYouKuaiBao:
         :param recommend_task: 
         :return: 
         """
+        payload = {
+            'ac': "DailyYuyueLing",
+            'id': recommend_task['bmh_task_id'],
+            'smdeviceid': "BIb2%2B05P0FzEEGiSf%2Fg59Gok28Sb6y1tyhmR8RlC2X0FUtOGCbu3ONvgIEoA2hae0BrOCLXtqoWe1TgeVHU0L7A%3D%3D",
+            'verison': "1.5.7.905",
+            'r': self._rand(),
+            'scookie': self.cookie,
+            'device': self.device
+        }
         try:
             daily_yuyue_ling_response = self._post(
                 url=API_ENDPOINTS["daily_task"],
-                content=f"ac=DailyYuyueLing&id={recommend_task['bmh_task_id']}&smdeviceid=BIb2%2B05P0FzEEGiSf%2Fg59Gok28Sb6y1tyhmR8RlC2X0FUtOGCbu3ONvgIEoA2hae0BrOCLXtqoWe1TgeVHU0L7A%3D%3D&verison=1.5.7.507&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload
             )
             if daily_yuyue_ling_response.get("key") == ERROR_CODES["SUCCESS"]:
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
             else:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 奖励领取失败❌, {daily_yuyue_ling_response}")
+                fn_print(
+                    f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- {daily_yuyue_ling_response.get('info', '奖励领取失败❌')}")
         except Exception as e:
             fn_print(f"={self.user_name}=, 领取预约游戏任务奖励异常：", e)
 
@@ -336,18 +386,36 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
+            payload1 = {
+                'ac': "DailyShare",
+                'id': recommend_task['bmh_task_id'],
+                'onlyc': "0",
+                'r': self._rand(),
+                'scookie': self.cookie,
+                'device': self.device
+            }
             daily_share_response = self._post(
                 url=API_ENDPOINTS["daily_task"],
-                content=f"ac=DailyShare&id={recommend_task['bmh_task_id']}&onlyc=0&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload1
             )
             if daily_share_response.get("key") != ERROR_CODES["TASK_READY"]:
                 return False
             # 回调任务
+            payload2 = {
+                'ac': "DailyShareCallback",
+                'id': recommend_task['bmh_task_id'],
+                'mode': "qq",
+                'source': "ds",
+                'r': self._rand(),
+                'scookie': self.cookie,
+                'device': self.device
+            }
             daily_share_callback_response = self._post(
                 url=API_ENDPOINTS["daily_task"],
-                content=f"ac=DailyShareCallback&id={recommend_task['bmh_task_id']}&mode=qq&source=ds&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload2
             )
-            if daily_share_callback_response.get("key") == ERROR_CODES["SUCCESS"] and daily_share_callback_response.get("info") == "可以领奖":
+            if daily_share_callback_response.get("key") == ERROR_CODES["SUCCESS"] and daily_share_callback_response.get(
+                    "info") == "可以领奖":
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
                 return True
             elif daily_share_callback_response.get("key") == ERROR_CODES["TASK_READY"]:
@@ -367,16 +435,23 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
+            payload = {
+                'ac': "DailySmallGame",
+                'id': recommend_task['bmh_task_id'],
+                'r': self._rand(),
+                'scookie': self.cookie,
+                'device': self.device
+            }
             daily_small_game_response = self._post(
                 url=API_ENDPOINTS["daily_task"],
-                content=f"ac=DailySmallGame&id={recommend_task['bmh_task_id']}&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload
             )
             if daily_small_game_response.get("key") == ERROR_CODES["SUCCESS"]:
                 fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
                 return True
             else:
                 fn_print(
-                    f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ❌游玩小游戏任务失败：{daily_small_game_response}")
+                    f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- {daily_small_game_response.get('info', '❌游玩小游戏任务失败')}")
                 return False
         except Exception as e:
             fn_print(f"={self.user_name}=, 小游戏任务调度任务异常：", e)
@@ -388,15 +463,26 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
+            payload = {
+                'ac': "DailySmallGameLing",
+                'id': recommend_task['bmh_task_id'],
+                'VersionCode': "342",
+                'smdeviceid': "BIb2%2B05P0FzEEGiSf%2Fg59Gok28Sb6y1tyhmR8RlC2X0FUtOGCbu3ONvgIEoA2hae0BrOCLXtqoWe1TgeVHU0L7A%3D%3D",
+                'verison': "1.5.7.507",
+                'r': self._rand(),
+                'scookie': self.cookie,
+                'device': self.device
+            }
             recevie_small_game_reward_response = self._post(
                 url=API_ENDPOINTS["daily_task"],
-                content=f"ac=DailySmallGameLing&id={recommend_task['bmh_task_id']}&VersionCode=342&smdeviceid=BIb2%2B05P0FzEEGiSf%2Fg59Gok28Sb6y1tyhmR8RlC2X0FUtOGCbu3ONvgIEoA2hae0BrOCLXtqoWe1TgeVHU0L7A%3D%3D&verison=1.5.7.507&r={self._rand()}&scookie={self._encode_cookie()}&device={self.device}"
+                data=payload
             )
             if recevie_small_game_reward_response.get("key") == ERROR_CODES["SUCCESS"]:
                 fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
             elif recevie_small_game_reward_response.get("key") == ERROR_CODES["TASK_DONE"]:
                 fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 已经领过奖励了！")
-            elif recevie_small_game_reward_response.get("key") == ERROR_CODES["NEED_HARVEST"]:  # 表示成熟度已经满了，先收割再播种，再领取小游戏任务奖励
+            elif recevie_small_game_reward_response.get("key") == ERROR_CODES[
+                "NEED_HARVEST"]:  # 表示成熟度已经满了，先收割再播种，再领取小游戏任务奖励
                 # 收割
                 self.harvest()
                 # 播种
@@ -425,16 +511,26 @@ class HaoYouKuaiBao:
         :return: 
         """
         try:
+            payload = {
+                'ac': "DailyShareLing",
+                'id': recommend_task['bmh_task_id'],
+                'smdeviceid': "BTeK4FWZx3plsETCF1uY6S1h2uEajvI1AicKa4Lqz3U7Tt5wKKDZZqVmVr7WpkcEuSQKyiDA3d64bErE%2FsaJp3Q%3D%3D",
+                'verison': "1.5.7.507",
+                'r': self._rand(),
+                'scookie': self.cookie,
+                'device': self.device
+            }
             recevie_daily_reward_response = self._post(
                 url=API_ENDPOINTS["daily_task"],
-                content=f"ac=DailyShareLing&smdeviceid=BTeK4FWZx3plsETCF1uY6S1h2uEajvI1AicKa4Lqz3U7Tt5wKKDZZqVmVr7WpkcEuSQKyiDA3d64bErE%2FsaJp3Q%3D%3D&verison=1.5.7.507&id={recommend_task['bmh_task_id']}&r={self._rand()}&scookie={self.cookie}&device={self.device}"
+                data=payload
             )
             if recevie_daily_reward_response.get("key") == ERROR_CODES["SUCCESS"]:
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
             elif recevie_daily_reward_response.get("key") == ERROR_CODES["TASK_DONE"]:
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 今天已经领取过了！")
             else:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 领取任务奖励失败！-> {recevie_daily_reward_response.get('msg', recevie_daily_reward_response)}")
+                fn_print(
+                    f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 领取任务奖励失败！-> {recevie_daily_reward_response.get('msg', recevie_daily_reward_response)}")
         except Exception as e:
             fn_print(f"={self.user_name}=, 领取任务奖励异常：", e)
 
@@ -470,17 +566,17 @@ class HaoYouKuaiBao:
         """
         if not self.small_game_task_list:
             return
-        
+
         fn_print(f"={self.user_name}=, 开始处理 {len(self.small_game_task_list)} 个小游戏任务")
-        
+
         # 启动所有小游戏任务
         for task in self.small_game_task_list:
             self.do_small_game_task(task)
-        
+
         # 统一等待5分钟（而不是每个任务都等5分钟）
-        fn_print(f"={self.user_name}=, 小游戏任务已启动，等待5分钟后领取奖励...")
+        fn_print(f"={self.user_name}=, 小游戏任务已启动，等待6分钟后领取奖励...")
         time.sleep(TASK_DELAYS["small_game"])
-        
+
         # 领取所有小游戏任务奖励
         for task in self.small_game_task_list:
             self.receive_small_game_reward(task)
@@ -495,10 +591,10 @@ class HaoYouKuaiBao:
         # 1. 先处理分享类型的任务（快速完成）
         for task in self.share_task_list:
             self.process_share_task(task)
-        
-        # 2. 批量处理小游戏任务（优化：统一等待5分钟）
+
+        # 2. 批量处理小游戏任务（优化：统一等待6分钟）
         self.process_small_game_tasks_batch()
-        
+
         # 3. 最后处理预约游戏任务
         for task in self.appointment_game_task_list:
             self.process_yuyue_game_task(task)
@@ -536,6 +632,7 @@ def main():
     for cookie_ in Hykb_cookie:
         hykb = HaoYouKuaiBao(cookie_)
         hykb.run()
+        hykb.client.close()
 
 
 if __name__ == '__main__':
