@@ -267,25 +267,32 @@ class HaoYouKuaiBao:
                 fn_print(f"={self.user_name}=, ❌购买种子失败：{bs_response}")
                 return False
 
-    # 获取今日必做推荐任务id
-    def get_recommend_task_ids(self) -> None:
+    def get_manors_task_info(self) -> None:
         """
-        获取今日必做推荐任务id
+        获取庄园任务信息（今日必做&更多庄园必做）
         :return: 
         """
-        html = self._get_text("https://huodong3.3839.com/n/hykb/cornfarm/index.php?imm=0")
-        soup = BeautifulSoup(html, 'html.parser')
-        task_list = soup.select(".taskDailyUl > li")
+        recommend_task_list = self.get_task_info(".taskDailyUl > li")
+        more_manors_task_list = self.get_task_info(".taskYcxUl > li")
+        task_list = recommend_task_list + more_manors_task_list
         for task_item in task_list:
             task_type = task_item.attrs.get("data-mode")
+            if task_type not in ["1", "9", "15"]:
+                continue
             tasks_infos = task_item.select_one("dl")
-            id_param = tasks_infos.select_one("dd")["class"][0]
+            onclick_value = tasks_infos.get("onclick")
+            if not onclick_value:
+                continue
+            match = re.search(r"ShowLue\((\d+),", onclick_value)
+            if not match:
+                continue
+            task_id = match.group(1)
             title_param = tasks_infos.select_one("dt").get_text()
             reward_param = tasks_infos.select_one("dd").get_text()
             if task_type == "1":
                 self.share_task_list.append(
                     {
-                        "bmh_task_id": re.search(r"daily_dd_(.+)", id_param).group(1),
+                        "bmh_task_id": task_id,
                         "bmh_task_title": title_param,
                         "reward_num": re.search(r"可得+(.+)", reward_param).group(1)
                     }
@@ -293,7 +300,7 @@ class HaoYouKuaiBao:
             elif task_type == "15":
                 self.small_game_task_list.append(
                     {
-                        "bmh_task_id": re.search(r"daily_dd_(.+)", id_param).group(1),
+                        "bmh_task_id": task_id,
                         "bmh_task_title": title_param,
                         "reward_num": re.search(r"可得+(.+)", reward_param).group(1)
                     }
@@ -301,11 +308,21 @@ class HaoYouKuaiBao:
             elif task_type == "9":
                 self.appointment_game_task_list.append(
                     {
-                        "bmh_task_id": re.search(r"daily_dd_(.+)", id_param).group(1),
+                        "bmh_task_id": task_id,
                         "bmh_task_title": title_param,
                         "reward_num": re.search(r"可得+(.+)", reward_param).group(1)
                     }
                 )
+
+    def get_task_info(self, selector):
+        """ 获取任务信息 """
+        try:
+            html = self._get_text("https://huodong3.3839.com/n/hykb/cornfarm/index.php?imm=0")
+            soup = BeautifulSoup(html, 'html.parser')
+            task_list = soup.select(selector)
+            return task_list
+        except Exception as e:
+            fn_print(f"获取任务信息失败：{e}")
 
     def get_moreManorToDo_task_ids(self) -> None:
         """
@@ -586,7 +603,7 @@ class HaoYouKuaiBao:
         执行任务
         :return: 
         """
-        self.get_recommend_task_ids()
+        self.get_manors_task_info()
 
         # 1. 先处理分享类型的任务（快速完成）
         for task in self.share_task_list:
@@ -621,7 +638,7 @@ class HaoYouKuaiBao:
                 else:
                     fn_print("={}=, 播种失败".format(self.user_name))
             self.watering()
-            fn_print("=" * 10 + f"【{self.user_name}】开始执行每日必做推荐任务" + "=" * 10)
+            fn_print("=" * 10 + f"【{self.user_name}】开始执行庄园任务" + "=" * 10)
             self.run_task()
         else:
             fn_print(f"={self.user_name}=, ❌登录失败：{data}")
