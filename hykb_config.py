@@ -51,6 +51,7 @@ ERROR_CODES = {
     "NO_SEEDS": "503",
     "TASK_DONE": "2001",
     "TASK_READY": "2002",
+    "CORN_MATURITY_100": "2004",  # 玉米成熟度已经达到100%
     "NEED_HARVEST": "2005"
 }
 
