@@ -64,6 +64,40 @@ class HaoYouKuaiBao:
     def _get_text(self, url: str) -> str:
         return self.client.get(url).text
 
+    def check_and_handle_corn_maturity(self) -> bool:
+        """
+        检查并处理玉米成熟度，如果达到100%则自动收割和播种
+        :return: 是否进行了收割操作
+        """
+        try:
+            # 重新登录获取最新状态
+            data = self.login()
+            if data.get('key') == ERROR_CODES["SUCCESS"]:
+                # 检查成熟度是否达到100%
+                if data['config']['csd_jdt'] == "100%":
+                    fn_print(f"={self.user_name}=, 🌽检测到玉米成熟度100%，开始收割...")
+                    # 收割
+                    self.harvest()
+                    # 重新登录获取最新状态
+                    data = self.login()
+                    # 检查是否需要播种
+                    if data['config']['grew'] == '-1':
+                        plant_status = self.plant()
+                        if plant_status == -1:
+                            fn_print(f"={self.user_name}=, 播种失败，没有种子，尝试购买种子...")
+                            # 购买种子
+                            if self.buy_seeds():
+                                self.plant()
+                        elif plant_status == 1:
+                            fn_print(f"={self.user_name}=, 播种成功🌾🌾🌾")
+                        else:
+                            fn_print(f"={self.user_name}=, 播种失败")
+                    return True
+            return False
+        except Exception as e:
+            fn_print(f"={self.user_name}=, ❌检查玉米成熟度异常：{e}")
+            return False
+
     def __user_info(self) -> Optional[Dict[str, str]]:
         """
         获取用户的信息
@@ -390,6 +424,19 @@ class HaoYouKuaiBao:
             )
             if daily_yuyue_ling_response.get("key") == ERROR_CODES["SUCCESS"]:
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
+            elif daily_yuyue_ling_response.get("key") == ERROR_CODES["CORN_MATURITY_100"]:
+                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 玉米成熟度100%，正在处理...")
+                # 检查并处理玉米成熟度
+                if self.check_and_handle_corn_maturity():
+                    # 重新尝试领取奖励
+                    daily_yuyue_ling_response = self._post(
+                        url=API_ENDPOINTS["daily_task"],
+                        data=payload
+                    )
+                    if daily_yuyue_ling_response.get("key") == ERROR_CODES["SUCCESS"]:
+                        fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
+                    else:
+                        fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 处理后仍无法领取奖励：{daily_yuyue_ling_response}")
             else:
                 fn_print(
                     f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- {daily_yuyue_ling_response.get('info', '奖励领取失败❌')}")
@@ -436,11 +483,11 @@ class HaoYouKuaiBao:
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
                 return True
             elif daily_share_callback_response.get("key") == ERROR_CODES["TASK_READY"]:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 已经领过奖励了🎁")
+                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 已经领过奖励了")
                 return False
             else:
                 fn_print(
-                    f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- \n{daily_share_callback_response}\n不可以领奖🫷🫸")
+                    f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- \n{daily_share_callback_response}\n不可以领奖")
                 return False
         except Exception as e:
             fn_print(f"={self.user_name}=, 调度任务异常：", e)
@@ -500,21 +547,18 @@ class HaoYouKuaiBao:
                 fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 已经领过奖励了！")
             elif recevie_small_game_reward_response.get("key") == ERROR_CODES[
                 "NEED_HARVEST"]:  # 表示成熟度已经满了，先收割再播种，再领取小游戏任务奖励
-                # 收割
-                self.harvest()
-                # 播种
-                plant_status = self.plant()
-                if plant_status == -1:  # 没有种子
-                    fn_print("={}=, 播种失败，没有种子".format(self.user_name))
-                    # 购买种子
-                    self.buy_seeds()
-                    self.plant()
-                elif plant_status == 1:
-                    ...
-                else:
-                    fn_print("={}=, 播种失败".format(self.user_name))
-                # 领取小游戏任务奖励
-                self.receive_small_game_reward(recommend_task)
+                fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 玉米成熟度100%，正在处理...")
+                # 检查并处理玉米成熟度
+                if self.check_and_handle_corn_maturity():
+                    # 重新尝试领取奖励
+                    recevie_small_game_reward_response = self._post(
+                        url=API_ENDPOINTS["daily_task"],
+                        data=payload
+                    )
+                    if recevie_small_game_reward_response.get("key") == ERROR_CODES["SUCCESS"]:
+                        fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
+                    else:
+                        fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 处理后仍无法领取奖励：{recevie_small_game_reward_response}")
             else:
                 fn_print(
                     f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ❌领取任务奖励失败：{recevie_small_game_reward_response}")
@@ -545,6 +589,19 @@ class HaoYouKuaiBao:
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
             elif recevie_daily_reward_response.get("key") == ERROR_CODES["TASK_DONE"]:
                 fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 今天已经领取过了！")
+            elif recevie_daily_reward_response.get("key") == ERROR_CODES["CORN_MATURITY_100"]:
+                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 玉米成熟度100%，正在处理...")
+                # 检查并处理玉米成熟度
+                if self.check_and_handle_corn_maturity():
+                    # 重新尝试领取奖励
+                    recevie_daily_reward_response = self._post(
+                        url=API_ENDPOINTS["daily_task"],
+                        data=payload
+                    )
+                    if recevie_daily_reward_response.get("key") == ERROR_CODES["SUCCESS"]:
+                        fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
+                    else:
+                        fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 处理后仍无法领取奖励：{recevie_daily_reward_response}")
             else:
                 fn_print(
                     f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 领取任务奖励失败！-> {recevie_daily_reward_response.get('msg', recevie_daily_reward_response)}")
