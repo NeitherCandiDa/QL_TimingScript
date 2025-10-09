@@ -11,7 +11,7 @@ from fn_print import fn_print
 ACTIVITY_CONFIG = {
 
     "is_luckyDraw": True,  # 是否开启抽奖（所有活动的抽奖）
-    "special_conf": ['积分乐园', 'OPPO Find X9 系列新品上市', '一加宠粉福利站'],  # 特殊任务配置
+    "special_conf": ['积分乐园', 'OPPO Find X9 系列新品上市', '一加宠粉福利站', '心动航行，尽兴出发！”莎莎主题活动进行中！'],  # 特殊任务配置
 
     "oppo_app": {
         "APP签到": {
@@ -26,6 +26,10 @@ ACTIVITY_CONFIG = {
         },
     },
     "oppo_applet": {
+        "心动航行，尽兴出发！”莎莎主题活动进行中！": {
+            "bp_url": "/bp/69263bc62563b533",
+            "raffle_name": "“心动航行，尽兴出发！”莎莎主题活动进行中！"
+        },
         "一加宠粉福利站": {
             "bp_url": "/bp/adfdd92edbb1b2ee",
             "raffle_name": "一加宠粉福利站"
@@ -52,14 +56,6 @@ ACTIVITY_CONFIG = {
             },
             "raffle_name": "小程序专享福利",
             "is_luckyDraw": False
-        },
-        "莎莎企业": {
-            "bp_url": "/bp/457871c72cb6ccd9",
-            "raffle_name": "莎莎企业 夏日奇旅"
-        },
-        "排球少年!!联名定制产品图鉴": {
-            "bp_url": "/bp/e0e8a5a074b18a45",
-            "raffle_name": "排球少年!!联名定制产品图鉴",
         },
     },
     "oppo_service": {
