@@ -31,7 +31,8 @@ API_ENDPOINTS = {
     "plant": "https://huodong3.3839.com/n/hykb/cornfarm/ajax_plant.php",
     "daily_task": "https://huodong3.3839.com/n/hykb/cornfarm/ajax_daily.php",
     "get_goods": "https://huodong3.3839.com/n/hykb/cornfarm/index.php?imm=0",
-    "buy_seeds": "https://shop.3839.com/index.php?c=OrderVirtual&a=createOrder"
+    "buy_seeds": "https://shop.3839.com/index.php?c=OrderVirtual&a=createOrder",
+    "checkOrder": "https://shop.3839.com/index.php?c=OrderVirtual&a=checkOrder"
 }
 
 # 任务类型配置
