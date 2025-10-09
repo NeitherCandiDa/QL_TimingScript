@@ -262,6 +262,29 @@ class HaoYouKuaiBao:
         except Exception as e:
             fn_print("好游快爆-获取商品id出现错误：{}".format(e))
 
+    def checkOrder(self, id):
+        """ 验证订单 """
+        try:
+            payload = {
+                'id': id,
+                'smdeviceid': "BiF6S9YYiuHxjr8schCE08Xnm3HULzxag2XoCKERi/JrQjjguf2JoXTiuQSAZ220WC11SZF/izpv55ghVZtwn+w==",
+                'version': "1.5.7.906",
+                'r': self._rand(),
+                'client': "1",
+                'scookie': self.cookie,
+                'device': self.device
+            }
+            response = self._post(
+                url=API_ENDPOINTS["checkOrder"],
+                data=payload
+            )
+            if response.get("code") != 200:
+                return False
+            return True
+        except Exception as e:
+            fn_print("好游快爆-验证订单出现错误：{}".format(e))
+            return False
+
     # 购买种子
     def buy_seeds(self) -> bool:
         """
@@ -281,11 +304,14 @@ class HaoYouKuaiBao:
             "client": 1,
             "scookie": self.cookie,
         }
+        if not self.checkOrder(goods_id):
+            fn_print(f"={self.user_name}=, ⚠️订单校验未通过，无法购买种子！")
+            return False
         cbs_response = self._post(
             url=API_ENDPOINTS["buy_seeds"],
             data=payload
         )
-        if cbs_response['key'] != "200":
+        if cbs_response.get("key") != "200":
             fn_print(f"={self.user_name}=, ❌购买种子出现错误：{cbs_response}")
             return False
         else:
@@ -671,6 +697,8 @@ class HaoYouKuaiBao:
 
         # 3. 最后处理预约游戏任务
         for task in self.appointment_game_task_list:
+            # for task in self.appointment_game_task_list:
+            #     print(task)
             self.process_yuyue_game_task(task)
 
     def run(self) -> None:
