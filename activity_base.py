@@ -11,8 +11,7 @@ from fn_print import fn_print
 ACTIVITY_CONFIG = {
 
     "is_luckyDraw": True,  # 是否开启抽奖（所有活动的抽奖）
-    "special_conf": ['积分乐园', 'OPPO Find X9 系列新品上市', '一加宠粉福利站',
-                     '心动航行，尽兴出发！”莎莎主题活动进行中！', 'S15 巅峰对决'],  # 特殊任务配置
+    "special_conf": ['积分乐园', 'OPPO Find X9 系列新品上市', 'S15 巅峰对决', '一起啦！超级搭'],  # 特殊任务配置
 
     "oppo_app": {
         "APP签到": {
@@ -27,17 +26,13 @@ ACTIVITY_CONFIG = {
         },
     },
     "oppo_applet": {
+        "一起啦！超级搭": {
+            "bp_url": "/bp/4da7ede61dc045cd",
+            "raffle_name": "一起啦！超级搭"
+        },
         "S15 巅峰对决": {
             "bp_url": "/bp/d24e2750503fbacf",
             "raffle_name": "S15 巅峰对决"
-        },
-        "心动航行，尽兴出发！”莎莎主题活动进行中！": {
-            "bp_url": "/bp/69263bc62563b533",
-            "raffle_name": "“心动航行，尽兴出发！”莎莎主题活动进行中！"
-        },
-        "一加宠粉福利站": {
-            "bp_url": "/bp/adfdd92edbb1b2ee",
-            "raffle_name": "一加宠粉福利站"
         },
         # "新品预约": {
         #     "bp_url": "/bp/0bff5d7a0cfc6953",
