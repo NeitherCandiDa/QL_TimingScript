@@ -34,6 +34,8 @@ DEFAULT_HEADERS = {
 class AiPm:
     def __init__(self, account):
         cookie, user_id = self._parse_account(account)
+        self.user_name = ''
+        self.quota = None
         if not user_id:
             fn_print("未配置用户ID！")
             self.client = None
@@ -69,23 +71,60 @@ class AiPm:
                 "/api/user/checkin"
             )
             if response.status_code == 200:
-                try:
-                    data = response.json()
-                except ValueError as e:
-                    fn_print(f"❌签到解析失败，{e}")
+                data = self._parse_json(response, "签到")
+                if data is None:
                     return
                 if data.get("success"):
-                    fn_print(f"{data.get('data').get('checkin_date')} - {data.get('message')}🎉")
+                    fn_print(f"{self.user_name} - {data.get('data').get('checkin_date')} - {data.get('message')}🎉")
                 else:
-                    fn_print(data.get("message"))
+                    fn_print(f"{self.user_name} - " + data.get("message"))
             else:
-                fn_print(f"签到异常！{response.text}")
+                fn_print(f"{self.user_name} - 签到异常！{response.text}")
         except httpx.RequestError as e:
-            fn_print(f"❌签到请求失败，{e}")
+            fn_print(f"{self.user_name} - ❌签到请求失败，{e}")
         except Exception as e:
-            fn_print(f"❌签到出现错误，{e}")
+            fn_print(f"{self.user_name} - ❌签到出现错误，{e}")
         finally:
+            self.get_user_info()
+            user_name = self.user_name or "未知用户"
+            quota = self.quota or "未知"
+            fn_print(f"用户：{user_name} | 当前余额：{quota}")
             self.client.close()
+
+    def get_user_info(self):
+        """ 获取用户信息 """
+        if self.client is None:
+            return
+        try:
+            response = self.client.get(
+                "/api/user/self"
+            )
+            if response.status_code == 200:
+                data = self._parse_json(response, "获取用户信息")
+                if data is None:
+                    return
+                if data.get("success"):
+                    self.user_name = data.get("data").get("username")
+                    quota_value = data.get("data", {}).get("quota")
+                    if isinstance(quota_value, (int, float)):
+                        dollars = quota_value / 500000
+                        self.quota = f"${dollars:.2f}"
+                    else:
+                        self.quota = None
+                else:
+                    fn_print(data)
+        except httpx.RequestError as e:
+            fn_print(f"❌获取用户信息请求失败，{e}")
+        except Exception as e:
+            fn_print(f"❌获取用户信息出现错误，{e}")
+
+    @staticmethod
+    def _parse_json(response, scene):
+        try:
+            return response.json()
+        except ValueError as e:
+            fn_print(f"❌{scene}解析失败，{e}")
+            return None
 
 
 if __name__ == '__main__':
