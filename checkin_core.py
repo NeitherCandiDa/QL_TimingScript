@@ -109,7 +109,7 @@ class CheckInClient:
                     quota_value = data.get("data", {}).get("quota")
                     if isinstance(quota_value, (int, float)):
                         dollars = quota_value / 500000
-                        self.quota = f"${dollars:.2f}"
+                        self.quota = f"{dollars:.2f}"
                     else:
                         self.quota = None
                 else:
