@@ -77,7 +77,7 @@ class CheckInClient:
                     return
                 if data.get("success"):
                     fn_print(
-                        f"{self.user_name} - {data.get('data').get('checkin_date')} - {data.get('message')}🎉，获得💲{data.get('quota_awarded') / 500000}"
+                        f"{self.user_name} - {data.get('data').get('checkin_date')} - {data.get('message')}🎉，获得💲{data.get('data').get('quota_awarded') / 500000}"
                     )
                 else:
                     fn_print(f"{self.user_name} - " + data.get("message"))
