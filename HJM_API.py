@@ -3,6 +3,8 @@
 # @fileName         HJM_API.py
 # @author           Leon
 # @EditTime         2026/3/12
+# const $ = new Env('哈基米中转站');
+# cron: 0 0 12 * * *
 from checkin_core import run_checkin
 
 if __name__ == '__main__':
