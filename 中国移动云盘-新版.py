@@ -10,7 +10,7 @@
 
 ─────────────────────────── 环境变量 ───────────────────────────
   ydyp_ck           必需   账号凭据，多账号用 @ 分隔
-  ydyp_ua           可选   自定义 User-Agent；建议填写（模拟自己手机，见下方风控建议）
+  ydyp_ua           必需   自己手机的 User-Agent（抓包复制完整整串）；不填直接退出
   ydyp_device_id    可选   全局默认设备号（UUID）；ydyp_ck 第 4 段可单独覆盖它
   ydyp_device_token 强烈建议 真机设备令牌（约 88 字符 base64）；不填则签到/领记录豆会回 614
   ydyp_upload_fill  可选   是否补足「当月上传满 100 个」，默认 0（该通道实测无效，见说明 5）
@@ -39,12 +39,12 @@
                   receiveV3（或搜你待领记录的那串数字 ID），看这条 POST 的请求体：
                     {"client":"app","cloudId":...,"cloudType":0,"deviceId":"<就是这一串>"}
                   它由 App 内置 SMSdk 依设备指纹生成、本机固定，抓一次可长期用。
-  ydyp_ua         （可省但强烈建议）在抓包里复制任意请求的完整 User-Agent 整串填进来。
-                  不填就用内置的一加 13（PJZ110）/ Android 15 / MCloudApp 13.2.2 ——
-                  多人共用同一串等于「同一台设备」，容易连带限流，所以请各填各的。
+  ydyp_ua         （必需）抓包里复制任意请求的完整 User-Agent 整串（含结尾的 MCloudApp/版本）。
+                  必须各填各的：它要和自己的设备令牌配套，UA 与设备对不上本身就是风险信号，
+                  多人共用一串也等于「同一台设备」。不填脚本直接退出。
 
 ──────────────────────────── 风控建议 ────────────────────────────
-  · 一账号一设备指纹：ydyp_ua 各填各的；deviceId 默认值已按账号派生，各人天然不同。
+  · 一账号一设备指纹：ydyp_ua + 设备令牌各填各的；deviceId 默认值已按账号派生，各人天然不同。
   · 不要把 ck 借给别人用（同一 ck 多 IP 登录本身就会触发风控）；也不要多机同跑一个账号。
 
 覆盖的领豆入口（均以 App/H5 接口面为准）：
@@ -99,9 +99,7 @@ try:
 except Exception:
     pass
 
-_UA_DEFAULT = ("Mozilla/5.0 (Linux; Android 15; PJZ110 Build/AP3A.240617.008; wv) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Version/4.0 Chrome/130.0.6723.58 Mobile Safari/537.36 MCloudApp/13.2.2")
-UA = (os.environ.get("ydyp_ua") or "").strip() or _UA_DEFAULT
+UA = (os.environ.get("ydyp_ua") or "").strip()  # 必需：自己手机的完整 User-Agent（抓包可得，与设备令牌配套）
 DEVICE_ID_ENV = (os.environ.get("ydyp_device_id") or "").strip()  # 全局默认设备号（被 ydyp_ck 第 4 段覆盖）
 DEVICE_TOKEN = (os.environ.get("ydyp_device_token") or "").strip()
 
@@ -128,6 +126,16 @@ def _sign_headers(params_str: str = "") -> dict:
     ts = str(int(time.time() * 1000))
     return {"x-request-id": rid, "x-timestamp": ts, "x-nonce": nonce,
             "x-signature": _md5(SIGN_SALT + rid + ts + nonce + params_str + SIGN_SALT)}
+
+
+def _require_ua() -> bool:
+    """UA 是必需项：必须填自己手机的 UA（与设备令牌配套），缺失直接退出。"""
+    if UA:
+        return True
+    log.log("❌ 未配置环境变量 ydyp_ua（必需项）—— 抓包复制任意请求的完整 User-Agent 整串填进来")
+    log.log("   形如：Mozilla/5.0 (Linux; Android 15; <你的机型> Build/XXX; wv) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Version/4.0 Chrome/XXX Mobile Safari/537.36 MCloudApp/<版本>")
+    return False
 
 
 class MobileCloudDisk:
@@ -712,7 +720,7 @@ class MobileCloudDisk:
     # ── 主流程 ──────────────────────────────────────────────────────────
     async def run(self):
         log.log(f"========== 用户【{self.show_account}】 ==========")
-        log.log(f"  📱 设备号 {self.device_id}｜UA {'自定义' if UA != _UA_DEFAULT else '内置默认'}"
+        log.log(f"  📱 设备号 {self.device_id}｜UA {UA if len(UA) <= 72 else UA[:72] + '…'}"
                 f"｜设备令牌 {'已配置 ✅' if DEVICE_TOKEN else '未配置 ⚠️（领记录豆会 614）'}")
         if not await self.login():
             log.log("  ❌ 登录失败，跳过该账号")
@@ -749,6 +757,8 @@ class MobileCloudDisk:
 
 
 async def main():
+    if not _require_ua():
+        return
     cookies = get_env("ydyp_ck", "@")
     if not cookies:
         log.log("❌ 未配置环境变量 ydyp_ck")
@@ -764,6 +774,8 @@ async def main():
 
 async def check():
     """只读自检：不签到、不抽奖、不领豆"""
+    if not _require_ua():
+        return
     cookies = get_env("ydyp_ck", "@")
     if not cookies:
         log.log("❌ 未配置环境变量 ydyp_ck")
@@ -772,9 +784,9 @@ async def check():
         w = MobileCloudDisk(ck)
         try:
             log.log(f"========== 自检【{w.show_account}】 ==========")
-            log.log("  📱 设备号：%s｜UA：%s｜设备令牌：%s" % (w.device_id,
-                                                         "自定义（ydyp_ua）" if UA != _UA_DEFAULT else "内置默认 · 建议用 ydyp_ua 换成自己的机型",
-                                                         "已配置 ✅" if DEVICE_TOKEN else "未配置 ⚠️（签到/领记录豆会回 614）"))
+            log.log("  📱 设备号：%s｜UA：%s｜设备令牌：%s" % (
+                w.device_id, UA if len(UA) <= 72 else UA[:72] + "…",
+                "已配置 ✅" if DEVICE_TOKEN else "未配置 ⚠️（签到/领记录豆会回 614）"))
             if not await w.login():
                 log.log("  ❌ 凭据无效：请重新抓包更新 ydyp_ck")
                 continue
