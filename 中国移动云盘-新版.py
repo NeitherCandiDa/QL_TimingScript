@@ -12,6 +12,7 @@
   ydyp_ck           必需   账号凭据，多账号用 @ 分隔
   ydyp_ua           可选   自定义 User-Agent；建议填写（模拟自己手机，见下方风控建议）
   ydyp_device_id    可选   全局默认设备号（UUID）；ydyp_ck 第 4 段可单独覆盖它
+  ydyp_device_token 强烈建议 真机设备令牌（约 88 字符 base64）；不填则签到/领记录豆会回 614
   ydyp_upload_fill  可选   是否补足「当月上传满 100 个」，默认 0（该通道实测无效，见说明 7）
 
   ydyp_ck 格式（# 分隔，后两段可省）：
@@ -33,6 +34,11 @@
                   填了会先用它、失效自动回退到 authorization 重换；不填每轮现换也行。
   deviceId        （可省）抓 tyrzLogin 请求体里的 deviceId（UUID 形式）。
                   不填则由脚本按账号派生：每个账号稳定、各人互不相同，无需手填。
+  ydyp_device_token （强烈建议）抓任意一条 App 领取请求，复制请求体里的 deviceId 整串
+                  （形如 AbCdEf012345...Q==，约 88 字符 base64）。抓法：抓包工具里搜
+                  receiveV3（或搜你待领记录的那串数字 ID），看这条 POST 的请求体：
+                    {"client":"app","cloudId":...,"cloudType":0,"deviceId":"<就是这一串>"}
+                  它由 App 内置 SMSdk 依设备指纹生成、本机固定，抓一次可长期用。
   ydyp_ua         （可省但强烈建议）在抓包里复制任意请求的完整 User-Agent 整串填进来。
                   不填就用内置的一加 13（PJZ110）/ Android 15 / MCloudApp 13.2.2 ——
                   多人共用同一串等于「同一台设备」，容易连带限流，所以请各填各的。
@@ -41,8 +47,8 @@
   · 一账号一设备指纹：ydyp_ua 各填各的；deviceId 默认值已按账号派生，各人天然不同。
   · 不要把 ck 借给别人用（同一 ck 多 IP 登录本身就会触发风控）；也不要多机同跑一个账号。
   · 脚本自带请求间隔节流，不必再加 sleep，也不要缩短。异常时宁可少领，别硬刚重试。
-  · 结果里出现 614/615「活动太火爆啦」= 服务端锁定（不是脚本参数问题），脚本会退避，
-    过一段时间或次日重试即可。
+  · 614/615「活动太火爆啦」= 服务端拒绝（多为设备未登记或风控锁定）。先确认
+    ydyp_device_token 已按上方抓法填写；仍然 614 就退避，隔日再试，别硬刚。
 
 覆盖的领豆入口（均以 App/H5 接口面为准，非老脚本硬编码）：
   A. 云朵中心 sign_in_3
@@ -58,8 +64,13 @@
 说明：
   1) 凭据三种形态脚本都认：Basic authorization（推荐）/ ssoToken / 裸 jwtToken（eyJhbGci....xx.yy）。
      直填 jwtToken 时脚本先探活再使用，失效会自动回退到 authorization 重换，不会一路空跑。
-  2) deviceId 部分接口强制要求。优先级：ydyp_ck 第 4 段 > ydyp_device_id > 按账号派生
-     （UUID 形式，一个账号固定一个、不同账号互不相同），一般不需要手填。
+  2) 设备标识有两套，别混淆：
+     a) 明文设备号（UUID）：走头部 deviceId / 登录请求体。优先级：ydyp_ck 第 4 段 >
+        ydyp_device_id > 按账号派生（一个账号固定一个、各人互不相同）。一般不用手填。
+     b) 加密设备令牌：签到 startSignIn（URL 参数）、领记录豆 receiveV3（请求体）、兑换
+        exchangeV3 这几个接口会带上它，服务端据此确认「设备已登记」。不填一律回
+        614「活动太火爆啦，锁定失败」——实测同账号同请求，仅补上这串即领取成功。
+        抓法见上方 ydyp_device_token。
   3) 依赖：httpx、python-dotenv；同目录需 log.py / get_env.py / sendNotify.py（本仓库自带，
      一起下载即可）。pip 装依赖：pip install httpx python-dotenv
   4) 云朵已改名 AI豆（2026-07-31，1:1）；接口前缀 /ycloud/，老 market 接口部分仍在服役。
@@ -90,6 +101,14 @@ import log
 from get_env import get_env
 from sendNotify import send_notification_message_collection
 
+# 先把 .env 读进环境，保证下面这些「可选变量」（ydyp_ua / ydyp_device_id /
+# ydyp_device_token）本地直接运行时也生效；面板/青龙注入的环境变量优先级更高，不会被覆盖。
+try:
+    from dotenv import load_dotenv, find_dotenv
+    load_dotenv(find_dotenv())
+except Exception:
+    pass
+
 # ── 常量 ────────────────────────────────────────────────────────────────
 # 设备指纹：默认内置一加 13（PJZ110）/ Android 15 / 云盘 App 13.2.2 的 UA。
 # 多人共用同一串 = 服务端视角「同一台设备」，对外发布请使用者用 ydyp_ua 覆盖成自己机型。
@@ -97,6 +116,10 @@ _UA_DEFAULT = ("Mozilla/5.0 (Linux; Android 15; PJZ110 Build/AP3A.240617.008; wv
                "(KHTML, like Gecko) Version/4.0 Chrome/130.0.6723.58 Mobile Safari/537.36 MCloudApp/13.2.2")
 UA = (os.environ.get("ydyp_ua") or "").strip() or _UA_DEFAULT
 DEVICE_ID_ENV = (os.environ.get("ydyp_device_id") or "").strip()     # 全局默认设备号（被 ydyp_ck 第 4 段覆盖）
+APP_VERSION = "13.2.2.0"                            # App 上报版本号（头部 appVersion，真机同款）
+# App 加密设备令牌（App 内置 SMSdk 依设备指纹生成、本机固定，抓包可得）：
+# 签到 / 领记录豆 / 兑换这些接口的强制项；缺失会被判「未知设备」→ 614「活动太火爆啦」。见说明 2)。
+DEVICE_TOKEN = (os.environ.get("ydyp_device_token") or "").strip()
 
 H5 = "https://m.mcloud.139.com"                     # 新接口平台（与云朵中心 H5 同源）
 YCLOUD = H5 + "/ycloud"
@@ -156,6 +179,16 @@ class MobileCloudDisk:
             h.update(extra)
         return h
 
+    def _dev_h(self, extra: dict = None) -> dict:
+        """真机同款设备头：isDeviceId 让网关校验「体/参数里的 deviceId」。
+        未配 ydyp_device_token 时保持原样（这些接口会回 614，属已知行为）。"""
+        h = self._h(extra)
+        if DEVICE_TOKEN:
+            h.pop("deviceId", None)      # App 不在头部带设备号，设备号走请求体 / URL 参数
+            h.update({"isDeviceId": "true", "activityId": MARKET_NAME,
+                      "appVersion": APP_VERSION, "x-requested-with": "com.chinamobile.mcloud"})
+        return h
+
     async def _req(self, method: str, url: str, **kw):
         """统一请求 + JSON 解析；异常吞掉返回 None，避免单点失败中断整轮。
         quiet=True 时不再打印「非 JSON 响应」告警——给预期可能 404/未部署的探测型接口用。"""
@@ -173,12 +206,22 @@ class MobileCloudDisk:
             log.log(f"    ❌ 请求异常 {url.split('?')[0]}: {e}")
             return None
 
-    async def _yget(self, path: str, params: dict = None, quiet: bool = False):
-        return await self._req("GET", YCLOUD + path, params=params, headers=self._h(), quiet=quiet)
+    async def _yget(self, path: str, params: dict = None, quiet: bool = False, dev: bool = False):
+        """dev=True：按真机方式把设备令牌放进 URL 参数（startSignIn 就是这样）。"""
+        params = dict(params or {})
+        if dev and DEVICE_TOKEN:
+            params["deviceId"] = DEVICE_TOKEN
+        return await self._req("GET", YCLOUD + path, params=params,
+                               headers=self._dev_h() if dev else self._h(), quiet=quiet)
 
-    async def _ypost(self, path: str, payload: dict = None, quiet: bool = False):
-        return await self._req("POST", YCLOUD + path, json=payload or {},
-                               headers=self._h({"Content-Type": "application/json;charset=UTF-8"}), quiet=quiet)
+    async def _ypost(self, path: str, payload: dict = None, quiet: bool = False, dev: bool = False):
+        """dev=True：按真机方式把设备令牌放进请求体（receiveV3 就是这样）。"""
+        jh = {"Content-Type": "application/json;charset=UTF-8"}
+        payload = dict(payload or {})
+        if dev and DEVICE_TOKEN:
+            payload["deviceId"] = DEVICE_TOKEN
+        return await self._req("POST", YCLOUD + path, json=payload,
+                               headers=(self._dev_h(jh) if dev else self._h(jh)), quiet=quiet)
 
     async def _mget(self, path: str):
         """老 market 接口（抽奖 / 备份 / 通知）"""
@@ -274,7 +317,7 @@ class MobileCloudDisk:
     # ── 签到 ────────────────────────────────────────────────────────────
     async def sign_in(self):
         """点击即签到（接口幂等：今日已签仍返回 todaySignIn=true）"""
-        r = await self._yget("/signin/page/startSignIn", {"client": "app"})
+        r = await self._yget("/signin/page/startSignIn", {"client": "app"}, dev=True)
         if r and r.get("code") == 0:
             res = r.get("result") or {}
             if res.get("todaySignIn"):
@@ -331,10 +374,14 @@ class MobileCloudDisk:
                     log.log(f"  🫘 膨胀/月度奖励领取失败：{rr}")
                 continue
             rr = None
+            if not DEVICE_TOKEN and total == 0 and pending == 0:
+                log.log("  ⚠️ 未配置 ydyp_device_token：领取记录豆会被判「未知设备」回 614，")
+                log.log("     按脚本头「这些值怎么拿到」抓一次填上即可（同账号实测补上即成功）")
             tries = 1 if lock_streak >= 2 else 3      # 连续锁定后不再逐笔重试，节省运行时间
             for attempt in range(1, tries + 1):
                 rr = await self._ypost("/signin/page/receiveV3",
-                                       {"client": "app", "cloudId": it.get("recordId"), "cloudType": ct})
+                                       {"client": "app", "cloudId": it.get("recordId"), "cloudType": ct},
+                                       dev=True)
                 if rr and rr.get("code") == 0:
                     break
                 if (rr or {}).get("code") not in (614, 615):
@@ -351,7 +398,8 @@ class MobileCloudDisk:
                 lock_streak += 1
                 log.log(f"  🫘 领取失败（{num} 豆, recordId={it.get('recordId')}, code={(rr or {}).get('code')}）："
                         f"{(rr or {}).get('msg')}"
-                        + ("｜614/615=服务端锁定，下次运行自动重试" if (rr or {}).get("code") in (614, 615) else ""))
+                        + ("｜614/615=设备未登记或风控锁定（检查 ydyp_device_token），下次运行自动重试"
+                           if (rr or {}).get("code") in (614, 615) else ""))
             await asyncio.sleep(random.uniform(0.8, 1.6))
         if total:
             log.log(f"  🫘 记录豆合计领取：+{total}")
@@ -708,7 +756,8 @@ class MobileCloudDisk:
     # ── 主流程 ──────────────────────────────────────────────────────────
     async def run(self):
         log.log(f"========== 用户【{self.show_account}】 ==========")
-        log.log(f"  📱 设备号 {self.device_id}｜UA {'自定义' if UA != _UA_DEFAULT else '内置默认'}")
+        log.log(f"  📱 设备号 {self.device_id}｜UA {'自定义' if UA != _UA_DEFAULT else '内置默认'}"
+                f"｜设备令牌 {'已配置 ✅' if DEVICE_TOKEN else '未配置 ⚠️（领记录豆会 614）'}")
         if not await self.login():
             log.log("  ❌ 登录失败，跳过该账号")
             return
@@ -769,8 +818,9 @@ async def check():
         w = MobileCloudDisk(ck)
         try:
             log.log(f"========== 自检【{w.show_account}】 ==========")
-            log.log("  📱 设备号：%s｜UA：%s" % (w.device_id,
-                     "自定义（ydyp_ua）" if UA != _UA_DEFAULT else "内置默认 · 建议用 ydyp_ua 换成自己的机型"))
+            log.log("  📱 设备号：%s｜UA：%s｜设备令牌：%s" % (w.device_id,
+                     "自定义（ydyp_ua）" if UA != _UA_DEFAULT else "内置默认 · 建议用 ydyp_ua 换成自己的机型",
+                     "已配置 ✅" if DEVICE_TOKEN else "未配置 ⚠️（签到/领记录豆会回 614）"))
             if not await w.login():
                 log.log("  ❌ 凭据无效：请重新抓包更新 ydyp_ck")
                 continue

@@ -41,7 +41,13 @@
 | `ydyp_ck`           |  ✅  | `authorization#手机号[#jwtToken][#deviceId]`，多账号用 `@` 分隔           |
 | `ydyp_ua`           | 建议 | 自己手机的 User-Agent（抓包复制整串）。不填用内置机型，多人同一串易被风控 |
 | `ydyp_device_id`    | 可选 | 默认设备号；不填按账号派生一个稳定 UUID，各人互不相同                      |
+| `ydyp_device_token` | 建议 | 真机设备令牌；**不填则签到/领记录豆被回 614**，抓一次可长期用（见下）       |
 | `ydyp_upload_fill`  | 可选 | 是否补足「当月上传满 100 个」，默认 `0`（该通道实测不计入计数）            |
+
+device token 怎么拿（关键）：抓包工具里搜 `receiveV3`（或搜你待领记录的那串数字 ID），
+打开那条 POST，复制**请求体里的 `deviceId` 整串**（约 88 字符 base64，形如
+`AbCdEf012345...Q==`）填进 `ydyp_device_token`。它由 App 内置 SMSdk 依设备指纹生成、
+本机固定，抓一次可长期用；不填的话签到与领记录豆会被服务端判为未知设备，一律回 614。
 
 authorization 怎么拿：手机装 Reqable 抓 App 任意请求的请求头，或用本仓库自带的
 「移动云盘抓authorization.zip」（解压后管理员运行，自动抓出）。有效期约 30 天，
