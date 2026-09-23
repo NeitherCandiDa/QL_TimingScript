@@ -15,7 +15,7 @@ import urllib.parse
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-from fn_print import all_print_list
+from log import all_print_list
 
 cur_path = os.path.abspath(os.path.dirname(__file__))
 root_path = os.path.split(cur_path)[0]
@@ -254,7 +254,8 @@ def pushplus_bot(title, content):
         data = {
             "token": PUSH_PLUS_TOKEN,
             "title": title,
-            "content": content
+            "content": content,
+            # "channel": "extension"
         }
         body = json.dumps(data).encode(encoding='utf-8')
         headers = {'Content-Type': 'application/json'}

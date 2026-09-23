@@ -1,0 +1,10 @@
+.env
+__pycache__/sendNotify.cpython-313.pyc
+__pycache__/fn_print.cpython-313.pyc
+__pycache__/get_env.cpython-313.pyc
+__pycache__/KDconfig.cpython-313.pyc
+.idea
+dw_creds.json
+*.bak_*
+_bak_*/
+*.pyc

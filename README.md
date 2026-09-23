@@ -1,18 +1,47 @@
+# 工作繁忙，有缘更新！！！
+
+访问量![Visitor Count](https://profile-counter.glitch.me/NeitherCandiDa-QL_TimingScript/count.svg)
+
+# 青龙拉取
+
+订阅管理->创建订阅->保存
+> 拉取链接：https://gitee.com/liu-long068/QL_TimingScript.git
+
+![输入图片说明](.idea/inspectionProfiles/image.png)
+
+# 安装依赖
+
+依赖管理->Python3->创建依赖
+
+![输入图片说明](.idea/inspectionProfiles/image2.png)
+
 # 已完成
 
+|                  |                                      | 是否可用 |
+|:-----------------|:------------------------------------:|:--------:|
+| 微信每日早安推送 | WeChatPublicNumberPushInformation.py |    ✅    |
+| 品赞代理         |             pzSignIn.py              |    ✅    |
+| 好游快爆         |      好游快爆浇水爆米花任务.py       |    ❌    |
+| 哈啰             |           hello_signIn.py            |    ❌    |
+| 中国移动云盘     |           中国移动云盘.py            |    ❌    |
+| 得物森林         |             得物森林.py              |    ✅    |
+| 滴滴出行         |             滴滴出行.py              |    ❌    |
+| 同程旅行         |               tclx.py                |    ❌    |
+| 浓五的酒馆       |            浓五的酒馆.py             |    ❌    |
+| 顺丰速运         |               sfsy.py                |    ❌    |
+| OPPO商城         |             OPPO商城.py              |    ❌    |
+| 安慕希           |              anmusi.py               |    ❌    |
 
+# 其他
 
-|          |                                      | 是否可用 |
-|:---------|:------------------------------------:|:----:|
-| 微信每日早安推送 | WeChatPublicNumberPushInformation.py |  ✅   |
-| 品赞代理     |             pzSignIn.py              |  ✅   |
-| 好游快爆     |            好游快爆浇水爆米花任务.py            |  ✅   |
-| 哈啰       |           hello_signIn.py            |  ✅   |
-| 中国移动云盘   |              中国移动云盘.py               |  ✅   |
-| 得物森林     |               得物森林.py                |  ❎   |
-| 滴滴出行     |               滴滴出行.py                |  ✅   |
+脚本的变量设置，以WeChatPublicNumberPushInformation.py为例：
+> 环境变量->创建变量 变量名以脚本内要求为准
 
+![输入图片说明](.idea/inspectionProfiles/image3.png)
 
+# Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=NeitherCandiDa/QL_TimingScript&type=Date)](https://www.star-history.com/#NeitherCandiDa/QL_TimingScript&Date)
 
 # 特别声明
 
