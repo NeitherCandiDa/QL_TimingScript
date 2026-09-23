@@ -128,7 +128,6 @@ def _gen_traceparent():
 
 
 def _load_creds():
-    """返回 {字段: [各账号的值]}。凭据全部来自环境变量/.env（青龙标准做法）。"""
     out = {k: [] for k in _CRED_FIELDS}
     for field, env in _CRED_FIELDS.items():
         out[field] = get_env(env, "&")
@@ -422,22 +421,22 @@ class DeWu:
                             continue
                         else:
                             self.log(f"领取气泡水滴发生异常❌, {receive_droplet_extra_response.status_code}")
-                            return  # [保护] 同上 (2026-09-22)
+                            return
                         flag = water_droplet_num
                         recevie_signal = True
                     flag = water_droplet_num
                     self.log(f"当前气泡水滴{water_droplet_num}g, 未满，开始浇水")
                     if not await self.waterting():
                         recevie_signal = True
-                    await asyncio.sleep(1.5)  # [限流改造] 0.5→1.5
+                    await asyncio.sleep(1.5)
                     continue
                 water_droplet_num = dig(droplet_extra_data, "data", "dailyExtra", "totalDroplet")
                 self.log(
                     f"{dig(droplet_extra_data, 'data', 'dailyExtra', 'popTitle')}, 已经积攒{water_droplet_num}g水滴！")
-                return  # [修复] 今日不可领取时直接结束，避免 while 循环刷屏 (2026-09-22)
+                return
             else:
                 self.log(f"获取气泡水滴信息发生异常❌, {droplet_extra_response.status_code}")
-                return  # [保护] 非200不再空转50轮狂发请求 (2026-09-22)
+                return
     
     async def waterting_droplet_extra(self):
         """
@@ -462,7 +461,7 @@ class DeWu:
                     await asyncio.sleep(0.5)
             else:
                 self.log(f"获取气泡水滴信息发生异常❌, {water_response.status_code}")
-                return  # [修复] 非200不再无限空转 (2026-09-22)
+                return
     
     async def receive_bucket_droplet(self):
         """
@@ -533,7 +532,6 @@ class DeWu:
                 'isProxy': "0",
                 'emu': "0",
                 'isRoot': "0",
-                # 'deviceTrait': "<已移除：如需使用请自行抓包填写>",  # [已禁用] 风控头→400 2026-09-22
                 'ua': "duapp/5.55.0(android;15)",
                 'Origin': "https://cdn-m.dewu.com",
                 'X-Requested-With': "com.shizhuang.duapp",
@@ -587,7 +585,7 @@ class DeWu:
         :param task_type: 
         :return: 
         """
-        await asyncio.sleep(_SLEEP_TASK)  # [节流] 领奖间隔，防 485
+        await asyncio.sleep(_SLEEP_TASK)
         url = _DW_API_HOST + "/hacking-tree/v1/task/receive"
         if task_type in [251]:
             json = {'classify': classify, 'taskId': task_id, 'completeFlag': 1}
@@ -747,7 +745,6 @@ class DeWu:
                 await asyncio.sleep(0.5)
     
     async def submit_task_completion_status(self, json):
-        # [修复 2026-09-22] 得物后端要求 taskType 为字符串，传 int 会返回 900「请求参数不合法」
         if isinstance(json, dict) and "taskType" in json and json["taskType"] is not None:
             json = dict(json)
             json["taskType"] = str(json["taskType"])
@@ -760,7 +757,6 @@ class DeWu:
             submit_task_completion_status_data = submit_task_completion_status_response.json()
             if submit_task_completion_status_data.get("code") == 200:
                 return True
-            # [修复] 原来静默返回 False，看不到真因；现在打印服务端响应
             self.log(f"提交任务完成状态未通过❌, {submit_task_completion_status_data}")
             return False
         else:
@@ -983,8 +979,6 @@ class DeWu:
                         )
                         await self.receive_task_reward(classify, task_id, task_type)
                         continue
-            # ---- 收藏商品任务 (taskType=50)，2026-09-22 新增 ----
-            # 识别依据：taskType==50 且 jumpUrl 带 spuId（形如「收藏想要的【品牌】商品」）
             if task_type == 50 and spu_id:
                 await self.do_favorite_task(classify, task_id, task_type, spu_id, btd,
                                             already_complete=bool(task_dict.get("isComplete")))
@@ -1251,7 +1245,6 @@ class DeWu:
         """
         if not spu_id:
             return False
-        # code 700「请先登录」/401 多为密集请求后的临时登录态抖动，等待后重试一次
         for attempt in range(2):
             resp = await self.client.post(
                 url=_DW_API_HOST + "/api/v1/h5/favorite/fire/app/favorite/add/spu/v2",
@@ -1276,12 +1269,12 @@ class DeWu:
 
         流程（H5 JS 逆向）：收藏商品 → 提交任务完成 → 领取奖励
         """
-        # ① 收藏商品（已完成的任务跳过收藏，直接走领奖，避免重复收藏）
+        # 收藏商品（已完成的任务跳过收藏，直接走领奖，避免重复收藏）
         if not already_complete:
             if not await self.favorite_spu(spu_id):
                 return
             await asyncio.sleep(_SLEEP_NORMAL)
-        # ② 提交任务完成状态（走 hacking-task/v1/task/commit）
+        # 提交任务完成状态（走 hacking-task/v1/task/commit）
         commit_resp = await self.client.post(
             url=_DW_API_HOST + "/hacking-task/v1/task/commit",
             headers=self.headers,
@@ -1296,7 +1289,7 @@ class DeWu:
         if commit_resp.status_code != 200 or commit_resp.json().get("code") != 200:
             self.log(f"收藏任务提交失败❌, {commit_resp.text[:100]}")
             return
-        # ③ 领取奖励
+        # 领取奖励
         await self.receive_task_reward(classify, task_id, task_type)
 
     async def click_product(self):
@@ -1346,7 +1339,6 @@ class DeWu:
             if receive_discover_droplet_response.status_code == 200:
                 receive_discover_droplet_data = receive_discover_droplet_response.json()
                 log.log(receive_discover_droplet_data)
-                # [修复] 原 while True 无任何出口会无限狂发请求 (2026-09-22)
                 if receive_discover_droplet_data.get("code") != 200:
                     return
                 if not (receive_discover_droplet_data.get("data") or {}).get("isOk"):
@@ -1469,9 +1461,6 @@ class DeWu:
         self.log(f"当前水滴数：{droplet_number}")
         await self.determine_whether_is_team_tree()
         await self.get_tree_planting_progress()
-        # if HELP_SIGNAL:
-        #     self.log(f"开始获取助力码")
-        #     share_code_list.append(await self.get_share_code())
         task_list = [
             self.droplet_sign_in(),
             self.receive_droplet_extra(),
@@ -1485,17 +1474,15 @@ class DeWu:
             self.receive_free_droplet(),
             self.droplet_invest(),
             self.click_product(),
-            # self.receive_brand_specials(),
-            # self.help_user(),
             self.receive_help_reward(),
             self.execute_weekend_task(),
             self.receive_level_reward(),
             self.waterting_until_less_than()
         ]
-        for _t in task_list:  # [限流改造] 串行执行，避免并发触发485限流 (2026-09-22)
+        for _t in task_list:
             await _t
         await self.get_tree_planting_progress()
-        self.log_summary()  # 末尾分级汇总 (2026-09-23)
+        self.log_summary()
 
 
 async def main():
