@@ -13,7 +13,7 @@
   ydyp_ua           可选   自定义 User-Agent；建议填写（模拟自己手机，见下方风控建议）
   ydyp_device_id    可选   全局默认设备号（UUID）；ydyp_ck 第 4 段可单独覆盖它
   ydyp_device_token 强烈建议 真机设备令牌（约 88 字符 base64）；不填则签到/领记录豆会回 614
-  ydyp_upload_fill  可选   是否补足「当月上传满 100 个」，默认 0（该通道实测无效，见说明 7）
+  ydyp_upload_fill  可选   是否补足「当月上传满 100 个」，默认 0（该通道实测无效，见说明 5）
 
   ydyp_ck 格式（# 分隔，后两段可省）：
       <authorization>#<手机号>#<jwtToken>#<deviceId>
@@ -46,11 +46,8 @@
 ──────────────────────────── 风控建议 ────────────────────────────
   · 一账号一设备指纹：ydyp_ua 各填各的；deviceId 默认值已按账号派生，各人天然不同。
   · 不要把 ck 借给别人用（同一 ck 多 IP 登录本身就会触发风控）；也不要多机同跑一个账号。
-  · 脚本自带请求间隔节流，不必再加 sleep，也不要缩短。异常时宁可少领，别硬刚重试。
-  · 614/615「活动太火爆啦」= 服务端拒绝（多为设备未登记或风控锁定）。先确认
-    ydyp_device_token 已按上方抓法填写；仍然 614 就退避，隔日再试，别硬刚。
 
-覆盖的领豆入口（均以 App/H5 接口面为准，非老脚本硬编码）：
+覆盖的领豆入口（均以 App/H5 接口面为准）：
   A. 云朵中心 sign_in_3
      1) 每日签到 startSignIn
      2) 签到翻倍 multiple（每月一次）
@@ -73,17 +70,11 @@
         抓法见上方 ydyp_device_token。
   3) 依赖：httpx、python-dotenv；同目录需 log.py / get_env.py / sendNotify.py（本仓库自带，
      一起下载即可）。pip 装依赖：pip install httpx python-dotenv
-  4) 云朵已改名 AI豆（2026-07-31，1:1）；接口前缀 /ycloud/，老 market 接口部分仍在服役。
-  5) 兑换接口带滑块验证（getSlidePuzzle + puzzleOffset），脚本无法完成，请手动兑换。
-  6) AI豆需手动领取，跨周未领会失效，建议每日至少执行一次。
-  7) 「当月上传文件满100个」的补足功能**实测无效**：OSE 活动上传（能完成「手动上传一个文件」）
+  4) 兑换接口带滑块验证（getSlidePuzzle + puzzleOffset），脚本无法完成。
+  5) 「当月上传文件满100个」的补足功能**实测无效**：OSE 活动上传（能完成「手动上传一个文件」）
      不计入该任务的 `process` 计数（上传 59 个后仍为 41），家庭云 V3 通道又要求账号已开通家庭云
      （`queryFamilyCloud` 返回空列表）。故该开关默认关闭（`ydyp_upload_fill=1` 才启用），
      522 只能靠真实上传/PC 客户端自然累计。
-
-用法：
-  python 中国移动云盘-新版.py           # 正常执行：上述 A+B+C 全流程
-  python 中国移动云盘-新版.py --check   # 只读自检：凭据 + 豆 + 任务 + 待领明细 + 各活动状态
 """
 import asyncio
 import hashlib
@@ -101,38 +92,30 @@ import log
 from get_env import get_env
 from sendNotify import send_notification_message_collection
 
-# 先把 .env 读进环境，保证下面这些「可选变量」（ydyp_ua / ydyp_device_id /
-# ydyp_device_token）本地直接运行时也生效；面板/青龙注入的环境变量优先级更高，不会被覆盖。
 try:
     from dotenv import load_dotenv, find_dotenv
+    
     load_dotenv(find_dotenv())
 except Exception:
     pass
 
-# ── 常量 ────────────────────────────────────────────────────────────────
-# 设备指纹：默认内置一加 13（PJZ110）/ Android 15 / 云盘 App 13.2.2 的 UA。
-# 多人共用同一串 = 服务端视角「同一台设备」，对外发布请使用者用 ydyp_ua 覆盖成自己机型。
 _UA_DEFAULT = ("Mozilla/5.0 (Linux; Android 15; PJZ110 Build/AP3A.240617.008; wv) AppleWebKit/537.36 "
-               "(KHTML, like Gecko) Version/4.0 Chrome/130.0.6723.58 Mobile Safari/537.36 MCloudApp/13.2.2")
+                "(KHTML, like Gecko) Version/4.0 Chrome/130.0.6723.58 Mobile Safari/537.36 MCloudApp/13.2.2")
 UA = (os.environ.get("ydyp_ua") or "").strip() or _UA_DEFAULT
-DEVICE_ID_ENV = (os.environ.get("ydyp_device_id") or "").strip()     # 全局默认设备号（被 ydyp_ck 第 4 段覆盖）
-APP_VERSION = "13.2.2.0"                            # App 上报版本号（头部 appVersion，真机同款）
-# App 加密设备令牌（App 内置 SMSdk 依设备指纹生成、本机固定，抓包可得）：
-# 签到 / 领记录豆 / 兑换这些接口的强制项；缺失会被判「未知设备」→ 614「活动太火爆啦」。见说明 2)。
+DEVICE_ID_ENV = (os.environ.get("ydyp_device_id") or "").strip()  # 全局默认设备号（被 ydyp_ck 第 4 段覆盖）
 DEVICE_TOKEN = (os.environ.get("ydyp_device_token") or "").strip()
 
-H5 = "https://m.mcloud.139.com"                     # 新接口平台（与云朵中心 H5 同源）
+H5 = "https://m.mcloud.139.com"  # 新接口平台（与云朵中心 H5 同源）
 YCLOUD = H5 + "/ycloud"
-MARKET = "https://caiyun.feixin.10086.cn"           # 老 market 平台（抽奖/备份/通知仍在此）
-SIGN_SALT = "sekaMdYYLIZfbCfm"                      # x-signature 盐值（前端 char-code 混淆还原）
-SOURCE_ID = "001005"                                # 云盘渠道号：换 ssoToken 与登录必须一致
+MARKET = "https://caiyun.feixin.10086.cn"  # 老 market 平台（抽奖/备份/通知仍在此）
+SIGN_SALT = "sekaMdYYLIZfbCfm"  # x-signature 盐值（前端 char-code 混淆还原）
+SOURCE_ID = "001005"  # 云盘渠道号：换 ssoToken 与登录必须一致
 CLIENT_VERSION = "13.2.2"
-MARKET_NAME = "sign_in_3"                           # 云朵中心活动标识
-UPLOAD_MARKET = "National_redCavalry"               # OSE 上传通道唯一可用活动（实测 8 个候选仅此通过）
-DRAW_TIMES = 3                                      # 单次运行抽奖次数（剩余次数以接口为准）
-UPLOAD_FILL = os.environ.get("ydyp_upload_fill", "0") == "1"   # 522 补足：**实测无效**（OSE 上传不计入 522 计数），默认关闭
-
-is_redeem = False                                   # 兑换需过滑块，无法脚本化，仅做提示
+APP_VERSION = CLIENT_VERSION + ".0"  # 头部 appVersion（真机同款，跟随上一行）
+MARKET_NAME = "sign_in_3"  # 云朵中心活动标识
+UPLOAD_MARKET = "National_redCavalry"  # OSE 上传通道唯一可用活动（实测 8 个候选仅此通过）
+DRAW_TIMES = 3  # 单次运行抽奖次数（剩余次数以接口为准）
+UPLOAD_FILL = os.environ.get("ydyp_upload_fill", "0") == "1"  # 522 补足：**实测无效**（OSE 上传不计入 522 计数），默认关闭
 
 
 def _md5(s: str) -> str:
@@ -149,7 +132,7 @@ def _sign_headers(params_str: str = "") -> dict:
 
 class MobileCloudDisk:
     """中国移动云盘 —— 云朵中心（AI豆）任务执行器"""
-
+    
     def __init__(self, cookie: str):
         fields = (cookie or "").split("#")
         self.authorization = fields[0].strip() if fields else ""
@@ -158,18 +141,18 @@ class MobileCloudDisk:
         # 设备号优先级：ydyp_ck 第 4 段 > ydyp_device_id > 按账号派生（UUID 形式，稳定且各账号互不相同）
         self.device_id = (fields[3].strip() if len(fields) > 3 and fields[3].strip()
                           else DEVICE_ID_ENV
-                          or str(uuid.uuid5(uuid.NAMESPACE_DNS, "ydyp:" + (self.account or "unknown"))))
+                               or str(uuid.uuid5(uuid.NAMESPACE_DNS, "ydyp:" + (self.account or "unknown"))))
         self.show_account = ((self.account[:3] + "****" + self.account[-4:])
                              if len(self.account) >= 11 else self.account)
         self.jwt = ""
         self.beans = None
         self.signed_today = None
-        self.info = {}                                  # infoV3 全量结果（含 receiveList）
+        self.info = {}  # infoV3 全量结果（含 receiveList）
         self.client = httpx.AsyncClient(verify=False, timeout=60, follow_redirects=True)
         self.base_headers = {"User-Agent": UA, "Accept": "*/*",
                              "Referer": H5 + "/portal/newsignin/index.html", "Origin": H5,
                              "deviceId": self.device_id}
-
+    
     # ── 基础设施 ────────────────────────────────────────────────────────
     def _h(self, extra: dict = None) -> dict:
         h = dict(self.base_headers)
@@ -178,17 +161,17 @@ class MobileCloudDisk:
         if extra:
             h.update(extra)
         return h
-
+    
     def _dev_h(self, extra: dict = None) -> dict:
         """真机同款设备头：isDeviceId 让网关校验「体/参数里的 deviceId」。
         未配 ydyp_device_token 时保持原样（这些接口会回 614，属已知行为）。"""
         h = self._h(extra)
         if DEVICE_TOKEN:
-            h.pop("deviceId", None)      # App 不在头部带设备号，设备号走请求体 / URL 参数
+            h.pop("deviceId", None)  # App 不在头部带设备号，设备号走请求体 / URL 参数
             h.update({"isDeviceId": "true", "activityId": MARKET_NAME,
                       "appVersion": APP_VERSION, "x-requested-with": "com.chinamobile.mcloud"})
         return h
-
+    
     async def _req(self, method: str, url: str, **kw):
         """统一请求 + JSON 解析；异常吞掉返回 None，避免单点失败中断整轮。
         quiet=True 时不再打印「非 JSON 响应」告警——给预期可能 404/未部署的探测型接口用。"""
@@ -199,13 +182,13 @@ class MobileCloudDisk:
                 return resp.json()
             except ValueError:
                 if not quiet:
-                    snippet = " ".join(resp.text.split())[:100]      # 404 会回整页 HTML，压成单行再入日志
+                    snippet = " ".join(resp.text.split())[:100]  # 404 会回整页 HTML，压成单行再入日志
                     log.log(f"    ⚠️ 非 JSON 响应 {resp.status_code}: {snippet}")
                 return None
         except Exception as e:
             log.log(f"    ❌ 请求异常 {url.split('?')[0]}: {e}")
             return None
-
+    
     async def _yget(self, path: str, params: dict = None, quiet: bool = False, dev: bool = False):
         """dev=True：按真机方式把设备令牌放进 URL 参数（startSignIn 就是这样）。"""
         params = dict(params or {})
@@ -213,7 +196,7 @@ class MobileCloudDisk:
             params["deviceId"] = DEVICE_TOKEN
         return await self._req("GET", YCLOUD + path, params=params,
                                headers=self._dev_h() if dev else self._h(), quiet=quiet)
-
+    
     async def _ypost(self, path: str, payload: dict = None, quiet: bool = False, dev: bool = False):
         """dev=True：按真机方式把设备令牌放进请求体（receiveV3 就是这样）。"""
         jh = {"Content-Type": "application/json;charset=UTF-8"}
@@ -222,11 +205,11 @@ class MobileCloudDisk:
             payload["deviceId"] = DEVICE_TOKEN
         return await self._req("POST", YCLOUD + path, json=payload,
                                headers=(self._dev_h(jh) if dev else self._h(jh)), quiet=quiet)
-
+    
     async def _mget(self, path: str):
         """老 market 接口（抽奖 / 备份 / 通知）"""
         return await self._req("GET", MARKET + path, headers=self._h())
-
+    
     async def _balance(self):
         """读豆余额（infoV3.result.total 为权威值）"""
         r = await self._yget("/signin/page/infoV3", {"client": "app"})
@@ -235,13 +218,13 @@ class MobileCloudDisk:
             return self.info.get("total")
         r = await self._yget("/signin/page/getCloudNum", {"client": "app"})
         return (r or {}).get("result") if r and r.get("code") == 0 else None
-
+    
     # ── 登录链路（实测：querySpecTokenV2 → /ycloud/auth-service/auth/tyrzLogin）────
     async def _jwt_alive(self) -> bool:
         """探一下当前 jwtToken 是否仍然可用（只读接口，无副作用）"""
         r = await self._yget("/signin/page/infoV3", {"client": "app"})
         return bool(r and r.get("code") == 0 and r.get("result"))
-
+    
     async def login(self) -> bool:
         if self.jwt:
             return True
@@ -254,15 +237,15 @@ class MobileCloudDisk:
                     return True
                 self.jwt = ""
                 log.log(f"  ⚠️ {label}填的 jwtToken 已失效")
-                if label == "第1段":                     # 第 1 段是 jwt 时没有可回退的凭据
+                if label == "第1段":  # 第 1 段是 jwt 时没有可回退的凭据
                     log.log("  ❌ 请重新抓包替换 ydyp_ck（第 1 段应填 Basic authorization）")
                     return False
-
+        
         sso = await self._query_sso_token()
         if sso and await self._tyrz_login(sso):
             return True
         return False
-
+    
     async def _query_sso_token(self):
         """① authorization → ssoToken（toSourceId 必须与登录 sourceId 一致，实测 001005）"""
         r = await self._req("POST", "https://user-njs.yun.139.com/user/querySpecTokenV2",
@@ -276,7 +259,7 @@ class MobileCloudDisk:
         else:
             log.log(f"  ❌ 换取 ssoToken 失败：{r}")
         return None
-
+    
     async def _tyrz_login(self, sso: str) -> bool:
         """② ssoToken → jwtToken（POST JSON；签名字符串为空串）"""
         body = {"token": sso, "openAccount": False,
@@ -293,7 +276,7 @@ class MobileCloudDisk:
             return True
         log.log(f"  ❌ 换取 jwtToken 失败：{r}")
         return False
-
+    
     # ── 状态查询 ────────────────────────────────────────────────────────
     async def query_status(self):
         """签到状态（infoV3）+ 豆余额 + 待领明细"""
@@ -313,7 +296,7 @@ class MobileCloudDisk:
             return res
         log.log(f"  ⚠️ 查询签到状态失败：{r}")
         return None
-
+    
     # ── 签到 ────────────────────────────────────────────────────────────
     async def sign_in(self):
         """点击即签到（接口幂等：今日已签仍返回 todaySignIn=true）"""
@@ -328,7 +311,7 @@ class MobileCloudDisk:
             log.log("  ⚠️ 签到失败（614/615 风控），稍后重试")
         else:
             log.log(f"  ❌ 签到失败：{r}")
-
+    
     # ── 签到翻倍（每月一次）──────────────────────────────────────────────
     async def sign_double(self):
         r = await self._yget("/signin/page/multiple", {"client": "app"})
@@ -339,7 +322,7 @@ class MobileCloudDisk:
             log.log(f"  ✖️2️⃣ 签到翻倍：{r.get('msg')} ⏭️")
         else:
             log.log(f"  ✖️2️⃣ 签到翻倍：{r}")
-
+    
     # ── 记录豆领取（receiveV3 / receiveTaskExpansion）────────────────────
     async def claim_records(self):
         """
@@ -377,7 +360,7 @@ class MobileCloudDisk:
             if not DEVICE_TOKEN and total == 0 and pending == 0:
                 log.log("  ⚠️ 未配置 ydyp_device_token：领取记录豆会被判「未知设备」回 614，")
                 log.log("     按脚本头「这些值怎么拿到」抓一次填上即可（同账号实测补上即成功）")
-            tries = 1 if lock_streak >= 2 else 3      # 连续锁定后不再逐笔重试，节省运行时间
+            tries = 1 if lock_streak >= 2 else 3  # 连续锁定后不再逐笔重试，节省运行时间
             for attempt in range(1, tries + 1):
                 rr = await self._ypost("/signin/page/receiveV3",
                                        {"client": "app", "cloudId": it.get("recordId"), "cloudType": ct},
@@ -406,7 +389,7 @@ class MobileCloudDisk:
         if pending:
             log.log(f"  🫘 暂未领到：{pending} 豆（服务端锁定，稍后/下次运行重试）")
         return total
-
+    
     # ── 任务 ────────────────────────────────────────────────────────────
     async def task_list(self):
         body = {"marketname": MARKET_NAME, "client": 1, "clientVersion": CLIENT_VERSION}
@@ -422,7 +405,7 @@ class MobileCloudDisk:
                 continue
             if t.get("state") != "FINISH":
                 await self._click_task(tid, name)
-                if tid in (106, 522):                       # 上传类任务：走 OSE 新通道
+                if tid in (106, 522):  # 上传类任务：走 OSE 新通道
                     await self.upload_file()
                 await asyncio.sleep(random.uniform(1.0, 2.0))
                 clicked += 1
@@ -435,12 +418,12 @@ class MobileCloudDisk:
             got = await self._claim_task(tid, name)
             gained += got or 0
         log.log(f"  🗂️ 任务处理：点击 {clicked} 条｜已完成 {skipped} 条｜本次领到 {gained} 豆")
-
+    
     async def _click_task(self, task_id, name=""):
         r = await self._yget("/signin/task/click", {"key": "task", "id": task_id})
         ok = bool(r and r.get("code") == 0)
         log.log(f"      {'✅' if ok else '⏭️'} {name[:20]}（id={task_id}）{'' if ok else '：' + str(r)}")
-
+    
     async def _claim_task(self, task_id, name=""):
         """领取任务奖励（任务未完成时返回 result:0）"""
         r = await self._yget("/signin/page/receiveTask", {"taskId": task_id})
@@ -448,7 +431,7 @@ class MobileCloudDisk:
             log.log(f"      🎁 「{name[:20]}」领取 {r['result']} 豆")
             return int(r["result"])
         return 0
-
+    
     # ── 抽奖 / 备份 / 通知（老接口，实测存活）────────────────────────────
     async def draw(self):
         info = await self._mget("/market/playoffic/drawInfo")
@@ -465,7 +448,7 @@ class MobileCloudDisk:
                 log.log(f"      🎉 抽中：{(r.get('result') or {}).get('prizeName')}")
             else:
                 log.log(f"      ⏭️ 抽奖返回：{r}")
-
+    
     async def backup_cloud(self):
         """连续备份奖励 + 每月膨胀云朵"""
         info = await self._mget("/market/backupgift/info")
@@ -484,7 +467,7 @@ class MobileCloudDisk:
             log.log(f"  ☁️ 连续备份奖励：接口返回异常 ⏭️ {info}")
         else:
             log.log(f"  ☁️ 连续备份奖励：本月未备份，暂无 ⏭️（state={state}）")
-
+        
         exp = await self._mget("/market/signin/page/taskExpansion")
         res = (exp or {}).get("result") or {}
         if res.get("preMonthBackup") and not res.get("curMonthBackupTaskAccept"):
@@ -498,7 +481,7 @@ class MobileCloudDisk:
                 log.log(f"  ☁️ 膨胀云朵：{r}")
         else:
             log.log("  ☁️ 膨胀云朵：暂无可领 ⏭️")
-
+    
     async def notice_task(self):
         """开启 App 通知奖励（msgPushOn）"""
         r = await self._mget("/market/msgPushOn/task/status")
@@ -508,7 +491,7 @@ class MobileCloudDisk:
             return
         log.log(f"  🔔 通知已开启 {res.get('onDuaration')} 天（累计 {res.get('total')} 天）")
         for t, st in ((1, res.get("firstTaskStatus")), (2, res.get("secondTaskStatus"))):
-            if st == 2:      # 2 = 可领取
+            if st == 2:  # 2 = 可领取
                 rr = await self._req("POST", MARKET + "/market/msgPushOn/task/obtain",
                                      json={"type": t},
                                      headers=self._h({"Content-Type": "application/json"}))
@@ -516,7 +499,7 @@ class MobileCloudDisk:
                     log.log(f"  🔔 通知任务{t} 领取成功：{rr.get('result')}")
                 else:
                     log.log(f"  🔔 通知任务{t} 领取返回：{rr}")
-
+    
     async def wx_sign(self):
         """微信公众号签到（2026-09 实测：活动已结束）"""
         r = await self._mget("/market/playoffic/followSignInfo?isWx=true")
@@ -526,17 +509,11 @@ class MobileCloudDisk:
             log.log("  📝 公众号签到：活动已结束 ⏭️")
         else:
             log.log(f"  📝 公众号签到：{r}")
-
+    
     # ── 上传文件（任务 106 手动上传 / 522 当月上传满100个）───────────────
     async def upload_file(self, count=1):
-        """
-        新通道（H5 OSE，实测唯一可用活动 = National_redCavalry）：
-          POST /ycloud/api/cloud/ose/activity/getUploadUrl {marketName,fileName,fileSize}
-            → {uploadUrl, uploadId, fileId, hashAlgorithm}
-          PUT  <uploadUrl>（原始字节）
-          POST /ycloud/api/cloud/ose/file/complete {uploadId,fileId,contentHash,contentHashAlgorithm}
-        实测：上传 1 个文件即把任务 106 从 currstep=1 推到 3（FINISH）。
-        """
+        """OSE 三步上传：getUploadUrl → PUT 原始字节 → file/complete。
+        实测：传 1 个即把任务 106 推到 FINISH；但**不计入 522**（见 说明 5）。"""
         ok = fail = streak = 0
         total = max(1, count)
         stamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -587,14 +564,10 @@ class MobileCloudDisk:
         if ok:
             log.log(f"      📤 本次上传 {ok} 个文件（失败 {fail}）")
         return ok
-
+    
     async def upload_fill_522(self, need: int):
-        """
-        522 补足开关（默认关闭）。**实测无效**，保留仅为口径变化时备用：
-          - OSE 活动上传能完成「手动上传一个文件」(106)，但不计入 522 的 process；
-          - 家庭云 V3 上传通道（group.yun.139.com/hcy/family/adapter/…）鉴权虽通过
-            （缺字段时回 1809111400），但要求账号已开通家庭云，本账号 `queryFamilyCloud` 返回空列表。
-        """
+        """522 补足开关（默认关闭，实测无效，仅备口径变化）。
+        另：家庭云 V3 通道（group.yun.139.com/hcy/…）需账号已开通家庭云，普通账号走不通。"""
         if need <= 0:
             return
         if not UPLOAD_FILL:
@@ -602,7 +575,7 @@ class MobileCloudDisk:
             return
         log.log(f"      📤 522 补足上传 {need} 个文件（注意：实测该通道不计入 522）…")
         await self.upload_file(count=min(need, 100))
-
+    
     # ── 活动巡检（云朵中心之外的独立领豆/领奖入口）───────────────────────
     async def live_room_flower(self):
         """直播间小红花：首次参与直接赠花（实测领到 10 朵）"""
@@ -623,7 +596,7 @@ class MobileCloudDisk:
         rf = await self._yget("/liveRoomFeedback/redFlower/queryRevivalFlowers")
         if rf and rf.get("code") == 0:
             log.log(f"    🌸 可复活红花：{rf.get('result')}")
-
+    
     async def spring_gift(self):
         """新春礼：开福袋抽奖（有免费次数就抽）"""
         tl = await self._yget("/simple/springgift/getTaskList")
@@ -632,7 +605,7 @@ class MobileCloudDisk:
             if t.get("complete") or not t.get("needRegister") or not reg_ok:
                 continue
             r = await self._ypost("/simple/springgift/registerTask", {"mark": t.get("id")}, quiet=True)
-            if r is None:                      # 该路由服务端未部署（404），后续不再尝试
+            if r is None:  # 该路由服务端未部署（404），后续不再尝试
                 reg_ok = False
                 log.log("    🧧 任务登记接口未部署（registerTask 404），跳过登记 ⏭️")
         cnt = await self._yget("/simple/springgift/getLotteryCount")
@@ -649,7 +622,7 @@ class MobileCloudDisk:
             name = ((r or {}).get("result") or {}).get("prizeName")
             log.log(f"        {'🎉 抽中：' + str(name) if name else '⏭️ 本次未中奖'}")
             await asyncio.sleep(random.uniform(1.0, 2.0))
-
+    
     async def token_pk(self):
         """TokenPK：阶段进度奖励 + 抽奖机会"""
         home = await self._yget("/tokenpk/toplist/progress/queryHome")
@@ -661,7 +634,7 @@ class MobileCloudDisk:
         stages = res.get("rewardStages") or []
         log.log(f"    🏆 TokenPK：已用 {used} token｜{len(stages)} 个阶段")
         for st in stages:
-            if st.get("status") == 1:                     # 1 = 可领取
+            if st.get("status") == 1:  # 1 = 可领取
                 r = await self._ypost("/tokenpk/toplist/progress/receiveReward",
                                       {"phaseNo": st.get("phaseNo")})
                 log.log(f"        🏆 阶段 {st.get('phaseNo')}（{st.get('threshold')}）奖励：{r}")
@@ -675,7 +648,7 @@ class MobileCloudDisk:
             r = await self._ypost("/tokenpk/toplist/progress/lottery")
             log.log(f"        🎟️ TokenPK 抽奖：{(r or {}).get('result')}")
             await asyncio.sleep(1.2)
-
+    
     async def mcloud_day(self):
         """云盘日：盲盒（开在线时抽）+ 礼品（有库存才领）"""
         info = await self._yget("/mcloudday/common/activityInfo", {"marketName": "mCloudDay"})
@@ -709,7 +682,7 @@ class MobileCloudDisk:
         for p in stock:
             r = await self._ypost("/mcloudday/gift/receive", {"prizeId": p.get("prizeId")})
             log.log(f"        🎁 礼品「{p.get('prizeName')}」：{r}")
-
+    
     async def email_sms(self):
         """邮箱/短信联合活动：状态查询 + 奖励尝试（资格受限时返回 604）"""
         ti = await self._yget("/openemailsms-service/openEmailsms/getTaskInfo")
@@ -723,7 +696,7 @@ class MobileCloudDisk:
             log.log(f"    📧 邮箱短信奖励：{r.get('result')}")
         else:
             log.log(f"    📧 邮箱短信奖励：{(r or {}).get('msg')} ⏭️")
-
+    
     async def activity_patrol(self):
         """活动巡检：逐个活动查状态，仅在有可领项时动作"""
         pats = (("签到翻倍", self.sign_double), ("直播间小红花", self.live_room_flower),
@@ -735,24 +708,7 @@ class MobileCloudDisk:
             except Exception as e:
                 log.log(f"    ❌ {name} 异常：{e}")
             await asyncio.sleep(random.uniform(0.5, 1.2))
-
-    # ── 兑换提示（滑块无法脚本化）───────────────────────────────────────
-    async def exchange_hint(self):
-        if not is_redeem:
-            return
-        r = await self._yget("/signin/page/exchangeList", {"client": "app"})
-        if not (r and r.get("code") == 0):
-            log.log(f"  ⚠️ 兑换列表不可用：{r}")
-            return
-        items = []
-        for _, group in (r.get("result") or {}).items():
-            for it in group or []:
-                if it.get("onLine") == 1:
-                    items.append("%s（%s 豆，今日余 %s）" % (it.get("prizeName"), it.get("POrder"),
-                                                         it.get("dailyRemainderCount")))
-        log.log("  🎁 可兑换：%s" % ("；".join(items) or "无"))
-        log.log("  ⚠️ 兑换接口需过滑块验证（puzzleOffset），脚本无法完成，请在 App/H5 手动兑换")
-
+    
     # ── 主流程 ──────────────────────────────────────────────────────────
     async def run(self):
         log.log(f"========== 用户【{self.show_account}】 ==========")
@@ -784,8 +740,6 @@ class MobileCloudDisk:
         await self.wx_sign()
         log.log("──────── 活动巡检 ────────")
         await self.activity_patrol()
-        log.log("──────── 兑换提示 ────────")
-        await self.exchange_hint()
         end = await self._balance()
         if begin is not None and end is not None:
             log.log(f"──────── 结束：AI豆 {begin} → {end}（+{end - begin}）────────")
@@ -819,8 +773,8 @@ async def check():
         try:
             log.log(f"========== 自检【{w.show_account}】 ==========")
             log.log("  📱 设备号：%s｜UA：%s｜设备令牌：%s" % (w.device_id,
-                     "自定义（ydyp_ua）" if UA != _UA_DEFAULT else "内置默认 · 建议用 ydyp_ua 换成自己的机型",
-                     "已配置 ✅" if DEVICE_TOKEN else "未配置 ⚠️（签到/领记录豆会回 614）"))
+                                                         "自定义（ydyp_ua）" if UA != _UA_DEFAULT else "内置默认 · 建议用 ydyp_ua 换成自己的机型",
+                                                         "已配置 ✅" if DEVICE_TOKEN else "未配置 ⚠️（签到/领记录豆会回 614）"))
             if not await w.login():
                 log.log("  ❌ 凭据无效：请重新抓包更新 ydyp_ck")
                 continue
@@ -829,8 +783,10 @@ async def check():
             log.log(f"  🫘 待领取明细 {len(items)} 笔：")
             for it in items:
                 log.log("      cloudType=%s %s 豆%s" % (it.get("cloudType"), it.get("cloudNum"),
-                                                       f" acceptDate={it.get('acceptDate')}" if it.get("acceptDate") else
-                                                       f" recordId={it.get('recordId')}" if it.get("recordId") else ""))
+                                                        f" acceptDate={it.get('acceptDate')}" if it.get(
+                                                            "acceptDate") else
+                                                        f" recordId={it.get('recordId')}" if it.get(
+                                                            "recordId") else ""))
             r = await w._ypost("/signin/task/taskListV3",
                                {"marketname": MARKET_NAME, "client": 1, "clientVersion": CLIENT_VERSION})
             tasks = (r or {}).get("result") or []
