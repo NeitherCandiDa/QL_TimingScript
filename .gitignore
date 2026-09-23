@@ -8,3 +8,6 @@ dw_creds.json
 *.bak_*
 _bak_*/
 *.pyc
+
+# 内部逆向/分析资料，仅本地保留
+docs/
