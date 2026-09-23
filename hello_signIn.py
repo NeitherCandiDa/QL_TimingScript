@@ -15,7 +15,7 @@ from datetime import datetime
 
 import httpx
 
-from fn_print import fn_print
+import log
 from get_env import get_env
 from sendNotify import send_notification_message_collection
 
@@ -65,17 +65,17 @@ class HelloSignIn:
             if data.get("code") == 0:
                 if action_type == "签到":
                     if data["data"]["didSignToday"]:
-                        fn_print(f"账户今日已签到， 金币🪙+{data['data']['bountyCountToday']}")
+                        log.log(f"账户今日已签到， 金币🪙+{data['data']['bountyCountToday']}")
                         return 
-                    fn_print("今日未签到, 检查token是否已过期")
+                    log.log("今日未签到, 检查token是否已过期")
                     return 
                 elif action_type == "查询金币":
-                    fn_print(f"账户可用金币🪙：{data['data']['points']}, 可抵扣{data['data']['amount']}元")
+                    log.log(f"账户可用金币🪙：{data['data']['points']}, 可抵扣{data['data']['amount']}元")
                     return 
-            fn_print(f"无法{action_type}, 检查token是否已过期")
+            log.log(f"无法{action_type}, 检查token是否已过期")
             return 
         except Exception as e:
-            fn_print(f"{action_type}失败: {str(e)}")
+            log.log(f"{action_type}失败: {str(e)}")
             return 
 
     async def run(self):

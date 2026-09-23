@@ -21,7 +21,7 @@ from datetime import datetime
 import httpx
 import requests
 
-from fn_print import fn_print
+import log
 from get_env import get_env
 from sendNotify import send_notification_message_collection
 
@@ -82,7 +82,7 @@ class MobileCloudDisk:
             refresh_token = refresh_token_responses["data"]["token"]
             return refresh_token
         else:
-            fn_print(refresh_token_responses)
+            log.log(refresh_token_responses)
             return None
 
     async def jwt(self):
@@ -95,13 +95,14 @@ class MobileCloudDisk:
             )
             jwt_datas = jwt_response.json()
             if jwt_datas["code"] != 0:
-                fn_print(jwt_datas["msg"])
+                log.log(jwt_datas["msg"])
                 return False
             self.JwtHeaders["jwtToken"] = jwt_datas["result"]["token"]
             self.cookies["jwtToken"] = jwt_datas["result"]["token"]
+            log.log("获取JWT成功： ", jwt_datas["result"]["token"])
             return True
         else:
-            fn_print("cookie可能失效了")
+            log.log("cookie可能失效了")
             return False
 
     async def query_sign_in_status(self):
@@ -118,12 +119,13 @@ class MobileCloudDisk:
             sign_response_data = sign_response_datas.json()
             if sign_response_data["msg"] == "success":
                 today_sign = sign_response_data["result"].get("todaySignIn", False)
+                today_sign = False
                 if today_sign:
-                    fn_print(f"用户【{self.account}】，===今日已签到☑️===")
+                    log.log(f"用户【{self.account}】，===今日已签到☑️===")
                 else:
                     await self.sign_in()
         else:
-            fn_print(f"签到查询状态异常：{sign_response_datas.status_code}")
+            log.log(f"签到查询状态异常：{sign_response_datas.status_code}")
 
     async def a_poke(self):
         """
@@ -143,14 +145,14 @@ class MobileCloudDisk:
                 if responses.status_code == 200:
                     responses_data = responses.json()
                     if "result" in responses_data:
-                        fn_print(f"用户【{self.account}】，===戳一戳成功✅✅===, {responses_data['result']}")
+                        log.log(f"用户【{self.account}】，===戳一戳成功✅✅===, {responses_data['result']}")
                         successful_click += 1
                 else:
-                    fn_print(f"戳一戳发生异常：{responses.status_code}")
+                    log.log(f"戳一戳发生异常：{responses.status_code}")
             if successful_click == 0:
-                fn_print(f"用户【{self.account}】，===未获得 x {self.click_num}===")
+                log.log(f"用户【{self.account}】，===未获得 x {self.click_num}===")
         except Exception as e:
-            fn_print(f"戳一戳执行异常：{e}")
+            log.log(f"戳一戳执行异常：{e}")
 
     async def refresh_notetoken(self):
         """
@@ -183,7 +185,7 @@ class MobileCloudDisk:
             if response.status_code == 200:
                 response.raise_for_status()
         except Exception as e:
-            fn_print('出错了:', e)
+            log.log('出错了:', e)
             return
         self.note_token = response.headers.get('NOTE_TOKEN')
         self.note_auth = response.headers.get('APP_AUTH')
@@ -211,7 +213,7 @@ class MobileCloudDisk:
                         continue
                     if app_type == "cloud_app":
                         if task_type == "month":
-                            fn_print("\n🗓️云盘每月任务")
+                            log.log("\n🗓️云盘每月任务")
                             for month in tasks:
                                 task_id = month.get("id")
                                 if task_id in [110, 113, 417, 409]:
@@ -220,13 +222,13 @@ class MobileCloudDisk:
                                 task_status = month.get("state", "")
 
                                 if task_status == "FINISH":
-                                    fn_print(f"【{self.account}】，===任务【{task_name}】已完成✅✅===")
+                                    log.log(f"【{self.account}】，===任务【{task_name}】已完成✅✅===")
                                     continue
-                                fn_print(f"【{self.account}】，===任务【{task_name}】待完成✒️✒️===")
+                                log.log(f"【{self.account}】，===任务【{task_name}】待完成✒️✒️===")
                                 await self.do_task(task_id, task_type="month", app_type="cloud_app")
                                 await asyncio.sleep(2)
                         elif task_type == "day":
-                            fn_print("\n🗓️云盘每日任务")
+                            log.log("\n🗓️云盘每日任务")
                             for day in tasks:
                                 task_id = day.get("id")
                                 if task_id == 404:
@@ -234,13 +236,13 @@ class MobileCloudDisk:
                                 task_name = day.get("name", "")
                                 task_status = day.get("state", "")
                                 if task_status == "FINISH":
-                                    fn_print(f"【{self.account}】，===任务【{task_name}】已完成✅✅===")
+                                    log.log(f"【{self.account}】，===任务【{task_name}】已完成✅✅===")
                                     continue
-                                fn_print(f"【{self.account}】，===任务【{task_name}】待完成✒️✒️===")
+                                log.log(f"【{self.account}】，===任务【{task_name}】待完成✒️✒️===")
                                 await self.do_task(task_id, task_type="day", app_type="cloud_app")
                     elif app_type == "email_app":
                         if task_type == "month":
-                            fn_print("\n🗓️139邮箱每月任务")
+                            log.log("\n🗓️139邮箱每月任务")
                             for month in tasks:
                                 task_id = month.get("id")
                                 task_name = month.get("name", "")
@@ -248,13 +250,13 @@ class MobileCloudDisk:
                                 if task_id in [1004, 1005, 1015, 1020]:
                                     continue
                                 if task_status == "FINISH":
-                                    fn_print(f"【{self.account}】，===任务【{task_name}】已完成✅✅===")
+                                    log.log(f"【{self.account}】，===任务【{task_name}】已完成✅✅===")
                                     continue
-                                fn_print(f"【{self.account}】，===任务【{task_name}】待完成✒️✒️===")
+                                log.log(f"【{self.account}】，===任务【{task_name}】待完成✒️✒️===")
                                 await self.do_task(task_id, task_type="month", app_type="email_app")
                                 await asyncio.sleep(2)
             except Exception as e:
-                fn_print(f"任务列表获取异常，错误信息：{e}")
+                log.log(f"任务列表获取异常，错误信息：{e}")
 
     async def do_task(self, task_id, task_type, app_type):
         """
@@ -298,11 +300,11 @@ class MobileCloudDisk:
         if sign_in_response.status_code == 200:
             sign_in_response_data = sign_in_response.json()
             if sign_in_response_data["msg"] == "success":
-                fn_print(f"用户【{self.account}】，===签到成功✅✅===")
+                log.log(f"用户【{self.account}】，===签到成功✅✅===")
             else:
-                fn_print(sign_in_response_data)
+                log.log(sign_in_response_data)
         else:
-            fn_print(f"签到发生异常：{sign_in_response.status_code}")
+            log.log(f"签到发生异常：{sign_in_response.status_code}")
 
     async def get_notebook_id(self):
         """
@@ -342,7 +344,7 @@ class MobileCloudDisk:
             if self.notebook_id:
                 await self.create_note(headers)
         else:
-            fn_print(f"获取笔记id发生异常：{note_response.status_code}")
+            log.log(f"获取笔记id发生异常：{note_response.status_code}")
 
     async def wx_app_sign(self):
         """
@@ -359,11 +361,11 @@ class MobileCloudDisk:
         if wx_sign_response.status_code == 200:
             wx_sign_response_data = wx_sign_response.json()
             if wx_sign_response_data["msg"] == "success":
-                fn_print(f"用户【{self.account}】，===微信公众号签到成功✅✅===")
+                log.log(f"用户【{self.account}】，===微信公众号签到成功✅✅===")
             if not wx_sign_response_data["result"].get("todaySignIn"):
-                fn_print(f"用户【{self.account}】，===微信公众号签到失败，可能未绑定公众号❌===")
+                log.log(f"用户【{self.account}】，===微信公众号签到失败，可能未绑定公众号❌===")
         else:
-            fn_print(f"签到发生异常：{wx_sign_response.status_code}")
+            log.log(f"签到发生异常：{wx_sign_response.status_code}")
 
     async def shake(self):
         """
@@ -383,17 +385,17 @@ class MobileCloudDisk:
                     await asyncio.sleep(1)
                     shake_prize_config = shake_response_data["result"].get("shakePrizeConfig")
                     if shake_prize_config:
-                        fn_print(
+                        log.log(
                             f"用户【{self.account}】，===抽抽乐-享好礼抽奖成功✅✅===, 获得：{shake_prize_config['name']}🎉🎉")
                         successful_shake += 1
                     else:
-                        fn_print(f"抽抽乐-享好礼抽奖未中奖")
+                        log.log(f"抽抽乐-享好礼抽奖未中奖")
                 else:
-                    fn_print(f"抽抽乐-享好礼抽奖发生异常：{responses.status_code}")
+                    log.log(f"抽抽乐-享好礼抽奖发生异常：{responses.status_code}")
         except Exception as e:
-            fn_print(f"抽抽乐-享好礼执行异常：{e}")
+            log.log(f"抽抽乐-享好礼执行异常：{e}")
         if successful_shake == 0:
-            fn_print(f"用户【{self.account}】，===未抽中 x {self.click_num}❌===")
+            log.log(f"用户【{self.account}】，===未抽中 x {self.click_num}❌===")
 
     async def surplus_num(self):
         """
@@ -412,7 +414,7 @@ class MobileCloudDisk:
             draw_info_data = draw_info_response.json()
             if draw_info_data.get('msg') == "success":
                 remain_num = draw_info_data["result"].get("surplusNumber", 0)
-                fn_print(f"剩余抽奖次数{remain_num}")
+                log.log(f"剩余抽奖次数{remain_num}")
                 if remain_num > 50 - self.draw:
                     for _ in range(self.draw):
                         await self.rm_sleep()
@@ -424,17 +426,17 @@ class MobileCloudDisk:
                             draw_data = draw_responses.json()
                             if draw_data.get("code") == 0:
                                 prize_name = draw_data["result"].get("prizeName", "")
-                                fn_print(f"用户【{self.account}】，===抽奖成功✅✅===, 获得：{prize_name}🎉🎉")
+                                log.log(f"用户【{self.account}】，===抽奖成功✅✅===, 获得：{prize_name}🎉🎉")
                             else:
-                                fn_print(f"抽奖失败了❌：{draw_data}")
+                                log.log(f"抽奖失败了❌：{draw_data}")
                         else:
-                            fn_print(f"抽奖发生异常：{draw_responses.status_code}")
+                            log.log(f"抽奖发生异常：{draw_responses.status_code}")
                 else:
                     pass
             else:
-                fn_print(f"查询剩余抽奖次数发生异常：{draw_info_data.get('msg')}")
+                log.log(f"查询剩余抽奖次数发生异常：{draw_info_data.get('msg')}")
         else:
-            fn_print(f"查询剩余抽奖次数发生异常：{draw_info_response.status_code}")
+            log.log(f"查询剩余抽奖次数发生异常：{draw_info_response.status_code}")
 
     async def fruit_login(self):
         """
@@ -443,7 +445,7 @@ class MobileCloudDisk:
         """
         token = await self.refresh_token()
         if token is not None:
-            fn_print(f"用户【{self.account}】，===果园专区Token刷新成功✅✅===")
+            log.log(f"用户【{self.account}】，===果园专区Token刷新成功✅✅===")
             await self.rm_sleep()
             login_info_url = f'{self.fruit_url}login/caiyunsso.do?token={token}&account={self.account}&targetSourceId=001208&sourceid=1003&enableShare=1'
             headers = {
@@ -463,13 +465,13 @@ class MobileCloudDisk:
             if do_login_response.status_code == 200:
                 do_login_data = do_login_response.json()
                 if do_login_data.get('result', {}).get('islogin') != 1:
-                    fn_print(f"用户【{self.account}】，===果园专区登录失败❌===")
+                    log.log(f"用户【{self.account}】，===果园专区登录失败❌===")
                     return
                 await self.fruit_task()
             else:
-                fn_print(f"果园专区登录请求发生异常：{do_login_response.status_code}")
+                log.log(f"果园专区登录请求发生异常：{do_login_response.status_code}")
         else:
-            fn_print(f"用户【{self.account}】，===果园专区Token刷新失败❌===")
+            log.log(f"用户【{self.account}】，===果园专区Token刷新失败❌===")
 
     async def fruit_task(self):
         """
@@ -486,7 +488,7 @@ class MobileCloudDisk:
             if check_sign_data.get("success"):
                 today_checkin = check_sign_data.get("result", {}).get("todayCheckin", 0)
                 if today_checkin == 1:
-                    fn_print(f"用户【{self.account}】，===今日已签到☑️☑️===")
+                    log.log(f"用户【{self.account}】，===今日已签到☑️☑️===")
                 else:
                     check_in_data = await self.client.get(
                         url=f"{self.fruit_url}task/checkin.do",
@@ -495,7 +497,7 @@ class MobileCloudDisk:
                     if check_in_data.status_code == 200:
                         check_in_data = check_in_data.json()
                         if check_in_data.get("result", {}).get("code", "") == 1:
-                            fn_print(f"用户【{self.account}】，===签到成功✅✅===")
+                            log.log(f"用户【{self.account}】，===签到成功✅✅===")
                             await self.rm_sleep()
                             water_response = await self.client.get(
                                 url=f'{self.fruit_url}user/clickCartoon.do?cartoonType=widget',
@@ -504,7 +506,7 @@ class MobileCloudDisk:
                             if water_response.status_code == 200:
                                 water_data = water_response.json()
                             else:
-                                fn_print(f"领取水滴请求发生异常：{water_response.status_code}")
+                                log.log(f"领取水滴请求发生异常：{water_response.status_code}")
                             color_response = await self.client.get(
                                 url=f'{self.fruit_url}user/clickCartoon.do?cartoonType=color',
                                 headers=self.treetHeaders
@@ -512,16 +514,16 @@ class MobileCloudDisk:
                             if color_response.status_code == 200:
                                 color_data = color_response.json()
                             else:
-                                fn_print(f"领取每日雨滴请求发生异常：{color_response.status_code}")
+                                log.log(f"领取每日雨滴请求发生异常：{color_response.status_code}")
                             given_water = water_data.get("result", {}).get("given", 0)
-                            fn_print(f"用户【{self.account}】，===领取每日水滴💧💧：{given_water}===")
-                            fn_print(f"用户【{self.account}】，===领取每日雨滴💧💧：{color_data.get('result').get('msg')}===")
+                            log.log(f"用户【{self.account}】，===领取每日水滴💧💧：{given_water}===")
+                            log.log(f"用户【{self.account}】，===领取每日雨滴💧💧：{color_data.get('result').get('msg')}===")
                         else:
-                            fn_print(f"用户【{self.account}】，===签到失败❌===")
+                            log.log(f"用户【{self.account}】，===签到失败❌===")
                     else:
-                        fn_print(f"签到请求发生异常：{check_in_data.status_code}")
+                        log.log(f"签到请求发生异常：{check_in_data.status_code}")
             else:
-                fn_print(f"用户【{self.account}】，===果园签到查询失败❌, {check_sign_data.get('msg')}===")
+                log.log(f"用户【{self.account}】，===果园签到查询失败❌, {check_sign_data.get('msg')}===")
             # 获取任务列表
             task_list_responses = await self.client.get(
                 url=f'{self.fruit_url}task/taskList.do?clientType=PE',
@@ -531,7 +533,7 @@ class MobileCloudDisk:
                 task_list_data = task_list_responses.json()
                 task_list = task_list_data.get('result', [])
             else:
-                fn_print(f"任务列表请求发生异常：{task_list_responses.status_code}")
+                log.log(f"任务列表请求发生异常：{task_list_responses.status_code}")
             task_state_responses = await self.client.get(
                 url=f'{self.fruit_url}task/taskState.do',
                 headers=self.treetHeaders
@@ -540,7 +542,7 @@ class MobileCloudDisk:
                 task_state_data = task_state_responses.json()
                 task_state_result = task_state_data.get('result', [])
             else:
-                fn_print(f"任务状态请求发生异常：{task_state_responses.status_code}")
+                log.log(f"任务状态请求发生异常：{task_state_responses.status_code}")
             for task in task_list:
                 task_id = task.get('taskId', "")
                 task_name = task.get('taskName', "")
@@ -550,12 +552,12 @@ class MobileCloudDisk:
                 task_state = next(
                     (state.get('taskState', 0) for state in task_state_result if state.get('taskId') == task_id), 0)
                 if task_state == 2:
-                    fn_print(f"用户【{self.account}】，===任务【{task_name}】已完成✅✅===")
+                    log.log(f"用户【{self.account}】，===任务【{task_name}】已完成✅✅===")
                 else:
                     await self.do_fruit_task(task_name, task_id, water_num)
             await self.tree_info()
         else:
-            fn_print(f"签到请求发生异常：{check_sign_responses.status_code}")
+            log.log(f"签到请求发生异常：{check_sign_responses.status_code}")
 
     async def do_fruit_task(self, task_name, task_id, water_num):
         """
@@ -565,7 +567,7 @@ class MobileCloudDisk:
         :param water_num: 
         :return: 
         """
-        fn_print(f"用户【{self.account}】，===任务【{task_name}】开始执行🚀🚀===")
+        log.log(f"用户【{self.account}】，===任务【{task_name}】开始执行🚀🚀===")
         do_task_url = f'{self.fruit_url}task/doTask.do?taskId={task_id}'
         do_task_response = await self.client.get(
             url=do_task_url,
@@ -582,16 +584,16 @@ class MobileCloudDisk:
                 if get_water_response.status_code == 200:
                     get_water_data = get_water_response.json()
                     if get_water_data.get("success"):
-                        fn_print(f"用户【{self.account}】，===已完成任务【{task_name}】✅✅，领取水滴: {water_num}===")
+                        log.log(f"用户【{self.account}】，===已完成任务【{task_name}】✅✅，领取水滴: {water_num}===")
                     else:
-                        fn_print(
+                        log.log(
                             f"用户【{self.account}】，===任务【{task_name}】领取水滴失败❌, {get_water_data.get('msg')}===")
                 else:
-                    fn_print(f"领取水滴请求发生异常：{get_water_response.status_code}")
+                    log.log(f"领取水滴请求发生异常：{get_water_response.status_code}")
             else:
-                fn_print(f"用户【{self.account}】，===任务【{task_name}】执行失败❌, {do_task_data.get('msg')}===")
+                log.log(f"用户【{self.account}】，===任务【{task_name}】执行失败❌, {do_task_data.get('msg')}===")
         else:
-            fn_print(f"任务执行请求发生异常：{do_task_response.status_code}")
+            log.log(f"任务执行请求发生异常：{do_task_response.status_code}")
 
     async def tree_info(self):
         """
@@ -606,11 +608,11 @@ class MobileCloudDisk:
         if tree_info_responses.status_code == 200:
             tree_info_data = tree_info_responses.json()
             if not tree_info_data.get("success"):
-                fn_print(f"用户【{self.account}】，===获取果园任务列表失败❌, {tree_info_data.get('msg')}===")
+                log.log(f"用户【{self.account}】，===获取果园任务列表失败❌, {tree_info_data.get('msg')}===")
             else:
                 collect_water = tree_info_data.get("result", {}).get("collectWater", 0)
                 tree_level = tree_info_data.get("result", {}).get("treeLevel", 0)
-                fn_print(f"用户【{self.account}】，===当前小树等级：{tree_level}，剩余水滴：{collect_water}===")
+                log.log(f"用户【{self.account}】，===当前小树等级：{tree_level}，剩余水滴：{collect_water}===")
                 if tree_level in (2, 4, 6, 8):
                     # 开宝箱
                     openbox_url = f'{self.fruit_url}prize/openBox.do'
@@ -620,9 +622,9 @@ class MobileCloudDisk:
                     )
                     if openbox_response.status_code == 200:
                         openbox_data = openbox_response.json()
-                        fn_print(f"用户【{self.account}】，==={openbox_data.get('msg')}===")
+                        log.log(f"用户【{self.account}】，==={openbox_data.get('msg')}===")
                     else:
-                        fn_print(f"开宝箱请求发生异常：{openbox_response.status_code}")
+                        log.log(f"开宝箱请求发生异常：{openbox_response.status_code}")
                 watering_amout = collect_water // 20  # 计算需要浇水的次数
                 watering_url = f'{self.fruit_url}user/watering.do?isFast=0'
                 if watering_amout > 0:
@@ -634,16 +636,16 @@ class MobileCloudDisk:
                         if watering_response.status_code == 200:
                             watering_data = watering_response.json()
                             if watering_data.get("success"):
-                                fn_print(f"用户【{self.account}】，===已完成{index + 1}次浇水🌊🌊===")
+                                log.log(f"用户【{self.account}】，===已完成{index + 1}次浇水🌊🌊===")
                             else:
-                                fn_print(f"用户【{self.account}】，===浇水失败❌, {watering_data.get('msg')}===")
+                                log.log(f"用户【{self.account}】，===浇水失败❌, {watering_data.get('msg')}===")
                             await asyncio.sleep(3)
                         else:
-                            fn_print(f"浇水请求发生异常：{watering_response.status_code}")
+                            log.log(f"浇水请求发生异常：{watering_response.status_code}")
                 else:
-                    fn_print(f"用户【{self.account}】，===水滴不足，无法浇水❌===")
+                    log.log(f"用户【{self.account}】，===水滴不足，无法浇水❌===")
         else:
-            fn_print(f"查询果园信息请求发生异常：{tree_info_responses.status_code}")
+            log.log(f"查询果园信息请求发生异常：{tree_info_responses.status_code}")
 
     async def cloud_game(self):
         """
@@ -664,14 +666,14 @@ class MobileCloudDisk:
                 curr_num = game_info_data.get("result", {}).get("info", {}).get("curr", 0)
                 count = game_info_data.get("result", {}).get("history", {}).get("0", {}).get("count", '')
                 rank = game_info_data.get("result", {}).get("history", {}).get("0", {}).get("rank", '')
-                fn_print(f"今日剩余游戏次数：{curr_num}\n本月排名：{rank}\n合成次数：{count}")
+                log.log(f"今日剩余游戏次数：{curr_num}\n本月排名：{rank}\n合成次数：{count}")
                 for _ in range(curr_num):
                     await self.client.get(
                         url=bigin_url,
                         headers=self.JwtHeaders,
                         cookies=self.cookies
                     )
-                    fn_print("开始游戏， 等待10-15秒完成游戏")
+                    log.log("开始游戏， 等待10-15秒完成游戏")
                     await asyncio.sleep(random.randint(10, 15))
                     end_response = await self.client.get(
                         url=end_url,
@@ -681,15 +683,15 @@ class MobileCloudDisk:
                     if end_response.status_code == 200:
                         end_data = end_response.json()
                         if end_data and end_data.get("code", -1) == 0:
-                            fn_print(f"用户【{self.account}】，===云朵大作战游戏成功✅✅===")
+                            log.log(f"用户【{self.account}】，===云朵大作战游戏成功✅✅===")
                         else:
-                            fn_print(f"用户【{self.account}】，===云朵大作战游戏失败❌===")
+                            log.log(f"用户【{self.account}】，===云朵大作战游戏失败❌===")
                     else:
-                        fn_print(f"用户【{self.account}】，===获取云朵大作战游戏信息失败❌===")
+                        log.log(f"用户【{self.account}】，===获取云朵大作战游戏信息失败❌===")
             else:
-                fn_print(f"用户【{self.account}】，===获取云朵大作战游戏信息失败❌===")
+                log.log(f"用户【{self.account}】，===获取云朵大作战游戏信息失败❌===")
         else:
-            fn_print(f"云朵大作战请求发生异常：{game_info_response.status_code}")
+            log.log(f"云朵大作战请求发生异常：{game_info_response.status_code}")
 
     async def receive(self):
         """
@@ -707,7 +709,7 @@ class MobileCloudDisk:
             receive_data = receive_response.json()
             await self.rm_sleep()
         else:
-            fn_print(f"领取云朵请求发生异常：{receive_response.status_code}")
+            log.log(f"领取云朵请求发生异常：{receive_response.status_code}")
         prize_response = await self.client.get(
             url=prize_url,
             headers=self.JwtHeaders,
@@ -724,11 +726,11 @@ class MobileCloudDisk:
                     rewards += f"待领取奖品：{prize_name}\n"
             receive_amout = receive_data["result"].get("receive", "")
             total_amout = receive_data["result"].get("total", "")
-            fn_print(f"\n用户【{self.account}】，===当前待领取{receive_amout}个云朵===")
-            fn_print(f"用户【{self.account}】，===当前云朵数量：{total_amout}个===")
-            fn_print(f"用户【{self.account}】，===云朵数量：{total_amout}个，{rewards}===")
+            log.log(f"\n用户【{self.account}】，===当前待领取{receive_amout}个云朵===")
+            log.log(f"用户【{self.account}】，===当前云朵数量：{total_amout}个===")
+            log.log(f"用户【{self.account}】，===云朵数量：{total_amout}个，{rewards}===")
         else:
-            fn_print(f"领取奖品请求发生异常：{prize_response.status_code}")
+            log.log(f"领取奖品请求发生异常：{prize_response.status_code}")
 
     async def backup_cloud(self):
         """
@@ -744,9 +746,9 @@ class MobileCloudDisk:
             backup_data = backup_response.json()
             state = backup_data.get("result", {}).get("state", {})
             if state == -1:
-                fn_print(f"用户【{self.account}】，===本月未备份，暂无连续备份奖励❌===")
+                log.log(f"用户【{self.account}】，===本月未备份，暂无连续备份奖励❌===")
             elif state == 0:
-                fn_print(f"用户【{self.account}】，===领取本月连续备份奖励===")
+                log.log(f"用户【{self.account}】，===领取本月连续备份奖励===")
                 cur_url = 'https://caiyun.feixin.10086.cn/market/backupgift/receive'
                 cur_response = await self.client.get(
                     url=cur_url,
@@ -755,16 +757,16 @@ class MobileCloudDisk:
                 if cur_response.status_code == 200:
                     cur_data = cur_response.json()
                     if isinstance(cur_data.get('result'), int):
-                        fn_print(f"异常：{cur_data.get('result')}")
-                    fn_print(f"用户【{self.account}】，===获得云朵数量：{cur_data.get('result').get('result')}===")
+                        log.log(f"异常：{cur_data.get('result')}")
+                    log.log(f"用户【{self.account}】，===获得云朵数量：{cur_data.get('result').get('result')}===")
                 else:
-                    fn_print(f"用户【{self.account}】，===获取云朵数量请求失败❌，{cur_response.status_code}===")
+                    log.log(f"用户【{self.account}】，===获取云朵数量请求失败❌，{cur_response.status_code}===")
             elif state == 1:
-                fn_print(f"用户【{self.account}】，===已领取本月连续备份奖励===")
+                log.log(f"用户【{self.account}】，===已领取本月连续备份奖励===")
             else:
-                fn_print(f"用户【{self.account}】，===获取本月连续备份奖励状态异常❌，{backup_data}===")
+                log.log(f"用户【{self.account}】，===获取本月连续备份奖励状态异常❌，{backup_data}===")
         else:
-            fn_print(f"用户【{self.account}】，===领取本月连续备份奖励请求失败❌，{backup_response.status_code}===")
+            log.log(f"用户【{self.account}】，===领取本月连续备份奖励请求失败❌，{backup_response.status_code}===")
         await self.rm_sleep()
         # 每月膨胀云朵
         expend_url = 'https://caiyun.feixin.10086.cn/market/signin/page/taskExpansion'
@@ -775,7 +777,7 @@ class MobileCloudDisk:
         if expend_response.status_code == 200:
             expend_data = expend_response.json()
         else:
-            fn_print(f"用户【{self.account}】，===每月膨胀云朵请求失败❌，{expend_response.status_code}===")
+            log.log(f"用户【{self.account}】，===每月膨胀云朵请求失败❌，{expend_response.status_code}===")
         cur_month_backup = expend_data.get("result", {}).get("curMonthBackup", "")  # 本月备份
         pre_month_backup = expend_data.get("result", {}).get("preMonthBackup", "")  # 上月备份
         cur_month_backup_task_accept = expend_data.get("result", {}).get("curMonthBackupTaskAccept", "")  # 本月是否领取
@@ -784,13 +786,13 @@ class MobileCloudDisk:
         accept_date = expend_data.get("result", {}).get("aeptDate", "")  # 月份
 
         if cur_month_backup:
-            fn_print(f"用户【{self.account}】，===本月已备份，下月可领取膨胀云朵: {next_month_backup_task_record_count}===")
+            log.log(f"用户【{self.account}】，===本月已备份，下月可领取膨胀云朵: {next_month_backup_task_record_count}===")
         else:
-            fn_print(f"用户【{self.account}】，===本月未备份，下月暂无膨胀云朵===")
+            log.log(f"用户【{self.account}】，===本月未备份，下月暂无膨胀云朵===")
 
         if pre_month_backup:
             if cur_month_backup_task_accept:
-                fn_print(f"用户【{self.account}】，===上月已备份，膨胀云朵已领取===")
+                log.log(f"用户【{self.account}】，===上月已备份，膨胀云朵已领取===")
             else:
                 receive_url = f'https://caiyun.feixin.10086.cn/market/signin/page/receiveTaskExpansion?acceptDate={accept_date}'
                 receive_response = await self.client.get(
@@ -801,14 +803,14 @@ class MobileCloudDisk:
                 if receive_response.status_code == 200:
                     receive_data = receive_response.json()
                     if receive_data.get("code") != 0:
-                        fn_print(f"用户【{self.account}】，===领取膨胀云朵失败❌，{receive_data.get('msg')}===")
+                        log.log(f"用户【{self.account}】，===领取膨胀云朵失败❌，{receive_data.get('msg')}===")
                     else:
-                        fn_print(
+                        log.log(
                             f"用户【{self.account}】，===领取膨胀云朵成功✅✅, {receive_data.get('result', {}).get('cloudCount'), ''}朵===")
                 else:
-                    fn_print(f"用户【{self.account}】，===领取膨胀云朵请求失败❌，{receive_response.status_code}===")
+                    log.log(f"用户【{self.account}】，===领取膨胀云朵请求失败❌，{receive_response.status_code}===")
         else:
-            fn_print(f"用户【{self.account}】，===上月未备份，本月暂无膨胀云朵===")
+            log.log(f"用户【{self.account}】，===上月未备份，本月暂无膨胀云朵===")
 
     async def open_send(self):
         """
@@ -829,7 +831,7 @@ class MobileCloudDisk:
             if push_on == 1:
                 reward_url = 'https://caiyun.feixin.10086.cn/market/msgPushOn/task/obtain'
                 if first_task_status == 3:
-                    fn_print(f"用户【{self.account}】，===领取任务1奖励成功✅✅===")
+                    log.log(f"用户【{self.account}】，===领取任务1奖励成功✅✅===")
                 else:
                     reward_response = await self.client.post(
                         url=reward_url,
@@ -838,9 +840,9 @@ class MobileCloudDisk:
                     )
                     if reward_response.status_code == 200:
                         reward_data = reward_response.json()
-                        fn_print(f"用户【{self.account}】，===领取任务1奖励成功✅✅===")
+                        log.log(f"用户【{self.account}】，===领取任务1奖励成功✅✅===")
                     else:
-                        fn_print(f"用户【{self.account}】，===领取任务1奖励请求失败❌，{reward_response.status_code}===")
+                        log.log(f"用户【{self.account}】，===领取任务1奖励请求失败❌，{reward_response.status_code}===")
                 if second_task_status == 2:
                     reward2_response = await self.client.post(
                         url=reward_url,
@@ -849,14 +851,14 @@ class MobileCloudDisk:
                     )
                     if reward2_response.status_code == 200:
                         reward_data = reward2_response.json()
-                        fn_print(f"用户【{self.account}】，===领取任务2奖励成功✅✅===")
+                        log.log(f"用户【{self.account}】，===领取任务2奖励成功✅✅===")
                     else:
-                        fn_print(f"用户【{self.account}】，===领取任务2奖励请求失败❌，{reward2_response.status_code}===")
-                fn_print(f"用户【{self.account}】，===通知已开启天数: {on_duaration}, 满31天可领取奖励===")
+                        log.log(f"用户【{self.account}】，===领取任务2奖励请求失败❌，{reward2_response.status_code}===")
+                log.log(f"用户【{self.account}】，===通知已开启天数: {on_duaration}, 满31天可领取奖励===")
             else:
-                fn_print(f"用户【{self.account}】，===未开启通知权限===")
+                log.log(f"用户【{self.account}】，===未开启通知权限===")
         else:
-            fn_print(f"用户【{self.account}】，===开启通知云朵请求失败❌，{send_response.status_code}===")
+            log.log(f"用户【{self.account}】，===开启通知云朵请求失败❌，{send_response.status_code}===")
 
     async def create_note(self, headers):
         """
@@ -920,9 +922,9 @@ class MobileCloudDisk:
             json=payload
         )
         if create_note_response.status_code == 200:
-            fn_print(f"用户【{self.account}】，===创建笔记成功✅✅===")
+            log.log(f"用户【{self.account}】，===创建笔记成功✅✅===")
         else:
-            fn_print(f"创建笔记发生异常：{create_note_response.status_code}")
+            log.log(f"创建笔记发生异常：{create_note_response.status_code}")
 
     async def upload_file(self):
         """
@@ -949,8 +951,8 @@ class MobileCloudDisk:
         if response is None:
             return
         if response.status_code != 200:
-            fn_print(f"上传文件发生异常：{response.status_code}")
-        fn_print(f"用户【{self.account}】，===上传文件成功✅✅===")
+            log.log(f"上传文件发生异常：{response.status_code}")
+        log.log(f"用户【{self.account}】，===上传文件成功✅✅===")
 
     async def rm_sleep(self, min_delay=1, max_delay=1.5):
         delay = random.uniform(min_delay, max_delay)
@@ -987,13 +989,13 @@ class MobileCloudDisk:
                             # print(reward_data)
                             oid = reward_data.get("oid")
                             msg = f"{reward_data.get('prizeName')} - 兑换所需云朵: {reward_data.get('pOrder')} - 是否可兑换: {'是' if reward_data.get('dailyRemainderCount') != 0 else '否'}"
-                            fn_print(msg)
+                            log.log(msg)
                             reward_list.append({"oid": oid, "prizeName": reward_data.get("prizeName")})
                     return reward_list
             else:
-                fn_print(f"获取可兑换奖励错误：{response.text}")
+                log.log(f"获取可兑换奖励错误：{response.text}")
         except Exception as e:
-            fn_print(f"获取可兑换奖励请求发生异常：{e}")
+            log.log(f"获取可兑换奖励请求发生异常：{e}")
 
     async def redeem_reward(self, oid):
         """
@@ -1011,40 +1013,40 @@ class MobileCloudDisk:
             if response.status_code == 200:
                 reward_data = response.json()
                 if reward_data.get("code") == 0:
-                    fn_print(f"✅兑换奖励成功：{reward_data.get('msg')}")
+                    log.log(f"✅兑换奖励成功：{reward_data.get('msg')}")
                 elif reward_data.get("code") == 2301:
-                    fn_print(f"❌兑换奖励失败！{reward_data.get('msg')}")
+                    log.log(f"❌兑换奖励失败！{reward_data.get('msg')}")
                 else:
-                    fn_print(f"❌兑换奖励失败！{reward_data.get('msg')}")
+                    log.log(f"❌兑换奖励失败！{reward_data.get('msg')}")
             else:
-                fn_print(f"❌兑换奖励请求错误：{response.text}")
+                log.log(f"❌兑换奖励请求错误：{response.text}")
         except Exception as e:
-            fn_print(f"❌兑换奖励请求发生异常：{e}")
+            log.log(f"❌兑换奖励请求发生异常：{e}")
 
     async def run(self):
         if await self.jwt():
-            fn_print("=========开始签到=========")
+            log.log("=========开始签到=========")
             await self.query_sign_in_status()
-            fn_print("=========开始执行戳一戳=========")
+            log.log("=========开始执行戳一戳=========")
             await self.a_poke()
             await self.get_task_list(url="sign_in_3", app_type="cloud_app")
-            fn_print("=========开始执行☁️云朵大作战=========")
+            log.log("=========开始执行☁️云朵大作战=========")
             await self.cloud_game()
-            # fn_print("=========开始执行🌳果园任务=========")
+            # log.log("=========开始执行🌳果园任务=========")
             # await self.fruit_login()
-            fn_print("=========开始执行📝公众号任务=========")
+            log.log("=========开始执行📝公众号任务=========")
             await self.wx_app_sign()
             await self.shake()
             await self.surplus_num()
-            fn_print("=========开始执行🔥热门任务=========")
+            log.log("=========开始执行🔥热门任务=========")
             await self.backup_cloud()
             await self.open_send()
-            fn_print("=========开始执行📮139邮箱任务=========")
+            log.log("=========开始执行📮139邮箱任务=========")
             await self.get_task_list(url="newsign_139mail", app_type="email_app")
             await self.receive()
             reward_list = await self.get_redeemable_reward_list()
             if is_redeem and reward_list:
-                fn_print("=========开始🎁兑换奖励=========")
+                log.log("=========开始🎁兑换奖励=========")
                 found = False
                 for reward in reward_list:
                     if reward.get("prizeName") == redeem_reward_description:
@@ -1054,10 +1056,10 @@ class MobileCloudDisk:
                             found = True
                             break
                 if not found:
-                    fn_print(f"❌未找到你想要兑换的奖品，请检查奖品名称是否正确")
+                    log.log(f"❌未找到你想要兑换的奖品，请检查奖品名称是否正确")
 
         else:
-            fn_print("token失效")
+            log.log("token失效")
 
 
 async def main():

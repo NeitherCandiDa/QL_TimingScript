@@ -5,7 +5,7 @@
 # @EditTime         2025/6/20
 from activity_base import BaseActivity, ACTIVITY_CONFIG
 import httpx
-from fn_print import fn_print
+import log
 
 
 class OppoServiceActivity(BaseActivity):
@@ -42,10 +42,10 @@ class OppoServiceActivity(BaseActivity):
                 is_sign_in = data.get("data").get("isSignIn")
                 return activityId, taskId, is_sign_in
             else:
-                fn_print(f"‼️获取活动信息失败: {data.get('msg')}")
+                log.log(f"‼️获取活动信息失败: {data.get('msg')}")
                 return None, None, None
         except Exception as e:
-            fn_print(f"❌获取活动信息异常: {e}")
+            log.log(f"❌获取活动信息异常: {e}")
             return None, None, None
 
     def sign_in(self, activityId, taskId):
@@ -63,19 +63,19 @@ class OppoServiceActivity(BaseActivity):
             response.raise_for_status()
             data = response.json()
             if data["code"] == "1":
-                fn_print(
+                log.log(
                     f"🎉打卡成功! 连续再学习打卡{data.get('data').get('remainingSignInDays')}天可获得【{data.get('data').get('signInActivityPrizeInfo').get('couponPkgName')}】")
             else:
-                fn_print(f"‼️{data.get('msg')}")
+                log.log(f"‼️{data.get('msg')}")
         except Exception as e:
-            fn_print(f"❌打卡异常: {e}")
+            log.log(f"❌打卡异常: {e}")
 
     def run(self):
         activityId, taskId, is_sign_in = self.get_activity_info()
         if is_sign_in:
-            fn_print("⚠️请勿重复签到！")
+            log.log("⚠️请勿重复签到！")
             return
         if not activityId and not taskId:
-            fn_print("⚠️未获取到活动信息！")
+            log.log("⚠️未获取到活动信息！")
             return
         self.sign_in(activityId, taskId)

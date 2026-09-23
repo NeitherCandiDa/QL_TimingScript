@@ -16,7 +16,7 @@ from datetime import datetime
 
 import httpx
 
-from fn_print import fn_print
+import log
 from get_env import get_env
 from sendNotify import send_notification_message_collection
 
@@ -61,16 +61,16 @@ class Tclx:
             )
             data = response.json()
             if data['code'] != 2200:
-                fn_print(f"用户【{self.phone}】 - token失效了，请更新")
+                log.log(f"用户【{self.phone}】 - token失效了，请更新")
                 return None
             else:
                 today_sign = data['data']['todaySign']
                 mileage = data['data']['mileageBalance']['mileage']
-                fn_print(f"用户【{self.phone}】 - 今日{'已' if today_sign else '未'}签到，当前剩余里程{mileage}！")
+                log.log(f"用户【{self.phone}】 - 今日{'已' if today_sign else '未'}签到，当前剩余里程{mileage}！")
                 return today_sign
         except Exception as e:
-            fn_print(f"用户【{self.phone}】 - 签到请求异常！{e}")
-            fn_print(response.text)
+            log.log(f"用户【{self.phone}】 - 签到请求异常！{e}")
+            log.log(response.text)
             return None
 
     async def do_sign_in(self):
@@ -83,14 +83,14 @@ class Tclx:
             )
             data = response.json()
             if data['code'] != 2200:
-                fn_print(f"用户【{self.phone}】 - 签到失败了，尝试获取任务列表")
+                log.log(f"用户【{self.phone}】 - 签到失败了，尝试获取任务列表")
                 return False
             else:
-                fn_print(f"用户【{self.phone}】 - 签到成功！开始获取任务列表")
+                log.log(f"用户【{self.phone}】 - 签到成功！开始获取任务列表")
                 return True
         except Exception as e:
-            fn_print(f"用户【{self.phone}】 - 执行签到请求异常！{e}")
-            fn_print(response.text)
+            log.log(f"用户【{self.phone}】 - 执行签到请求异常！{e}")
+            log.log(response.text)
             return False
 
     async def get_task_list(self):
@@ -102,7 +102,7 @@ class Tclx:
             )
             data = response.json()
             if data['code'] != 2200:
-                fn_print(f"用户【{self.phone}】 - 获取任务列表失败了")
+                log.log(f"用户【{self.phone}】 - 获取任务列表失败了")
                 return None
             else:
                 tasks = []
@@ -117,8 +117,8 @@ class Tclx:
                         )
                 return tasks
         except Exception as e:
-            fn_print(f"用户【{self.phone}】 - 获取任务列表请求异常！{e}")
-            fn_print(response.text)
+            log.log(f"用户【{self.phone}】 - 获取任务列表请求异常！{e}")
+            log.log(response.text)
             return None
 
     async def perform_tasks(self, task_code):
@@ -130,14 +130,14 @@ class Tclx:
             )
             data = response.json()
             if data['code'] != 2200:
-                fn_print(f"用户【{self.phone}】 - 执行任务【{task_code}】失败了，跳过当前任务")
+                log.log(f"用户【{self.phone}】 - 执行任务【{task_code}】失败了，跳过当前任务")
                 return None
             else:
                 task_id = data['data']
                 return task_id
         except Exception as e:
-            fn_print(f"用户【{self.phone}】 - 执行任务【{task_code}】请求异常！{e}")
-            fn_print(response.text)
+            log.log(f"用户【{self.phone}】 - 执行任务【{task_code}】请求异常！{e}")
+            log.log(response.text)
             return None
 
     async def finsh_task(self, task_id):
@@ -152,19 +152,19 @@ class Tclx:
                 )
                 data = response.json()
                 if data['code'] == 2200:
-                    fn_print(f"用户【{self.phone}】 - 完成任务【{task_id}】成功！开始领取奖励")
+                    log.log(f"用户【{self.phone}】 - 完成任务【{task_id}】成功！开始领取奖励")
                     return True
                 if attempt < max_retry - 1:
-                    fn_print(f"用户【{self.phone}】 - 完成任务【{task_id}】失败了，尝试重新提交（第{attempt + 1}次重试。。）")
+                    log.log(f"用户【{self.phone}】 - 完成任务【{task_id}】失败了，尝试重新提交（第{attempt + 1}次重试。。）")
                     await asyncio.sleep(retry_delay * (attempt + 1))
                     continue
-                fn_print(f"用户【{self.phone}】 - 完成任务【{task_id}】最终失败，跳过当前任务")
+                log.log(f"用户【{self.phone}】 - 完成任务【{task_id}】最终失败，跳过当前任务")
                 return False
             except Exception as e:
                 error_msg = f"用户【{self.phone}】 - 完成任务【{task_id}】请求异常！{e}"
                 if 'response' in locals():
                     error_msg += f"\n{response.text}"
-                fn_print(error_msg)
+                log.log(error_msg)
                 if attempt == max_retry - 1:
                     return False
                 await asyncio.sleep(retry_delay * (attempt + 1))
@@ -178,12 +178,12 @@ class Tclx:
             )
             data = response.json()
             if data['code'] != 2200:
-                fn_print(f"用户【{self.phone}】 - 领取签到奖励失败了， 请尝试手动领取")
+                log.log(f"用户【{self.phone}】 - 领取签到奖励失败了， 请尝试手动领取")
             else:
-                fn_print(f"用户【{self.phone}】 - 领取签到奖励成功！开始下一个任务")
+                log.log(f"用户【{self.phone}】 - 领取签到奖励成功！开始下一个任务")
         except Exception as e:
-            fn_print(f"用户【{self.phone}】 - 领取签到奖励请求异常！{e}")
-            fn_print(response.text)
+            log.log(f"用户【{self.phone}】 - 领取签到奖励请求异常！{e}")
+            log.log(response.text)
 
     async def get_mileage_info(self):
         try:
@@ -194,18 +194,18 @@ class Tclx:
             )
             data = response.json()
             if data['code'] != 2200:
-                fn_print(f"用户【{self.phone}】 - 获取积分信息失败了")
+                log.log(f"用户【{self.phone}】 - 获取积分信息失败了")
                 return None
             else:
                 cycle_sign_num = data['data']['cycleSighNum']
                 continuous_history = data['data']['continuousHistory']
                 mileage = data['data']['mileageBalance']['mileage']
                 today_mileage = data['data']['mileageBalance']['todayMileage']
-                fn_print(
+                log.log(
                     f"用户【{self.phone}】 - 本月签到{cycle_sign_num}天，连续签到{continuous_history}天，今日共获取{today_mileage}里程，当前剩余里程{mileage}")
         except Exception as e:
-            fn_print(f"用户【{self.phone}】 - 获取积分信息请求异常！{e}")
-            fn_print(response.text)
+            log.log(f"用户【{self.phone}】 - 获取积分信息请求异常！{e}")
+            log.log(response.text)
             return None
 
     async def run(self):
@@ -213,17 +213,17 @@ class Tclx:
         if today_sign is None:
             return
         if today_sign:
-            fn_print(f"用户【{self.phone}】 - 今日已签到，开始获取任务列表")
+            log.log(f"用户【{self.phone}】 - 今日已签到，开始获取任务列表")
         else:
             if await self.do_sign_in():
-                fn_print(f"用户【{self.phone}】 - 签到成功，开始获取任务列表")
+                log.log(f"用户【{self.phone}】 - 签到成功，开始获取任务列表")
         tasks = await self.get_task_list()
         if tasks:
             for task in tasks:
                 task_code = task['taskCode']
                 title = task['title']
                 browser_time = task['browserTime']
-                fn_print(f"用户【{self.phone}】 - 开始做任务【{title}】，需要浏览{browser_time}秒")
+                log.log(f"用户【{self.phone}】 - 开始做任务【{title}】，需要浏览{browser_time}秒")
                 task_id = await self.perform_tasks(task_code)
                 if task_id:
                     await asyncio.sleep(browser_time)

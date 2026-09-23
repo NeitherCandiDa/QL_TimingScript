@@ -13,7 +13,7 @@ import time
 import httpx
 from typing import Text, Optional, List, Dict
 
-from fn_print import fn_print
+import log
 from sendNotify import send_notification_message_collection
 
 """
@@ -78,7 +78,7 @@ def time_diff(time1: Text, time2: Text, format) -> int:
     if time2 > time1:
         return (time2 - time1).days
     else:
-        fn_print("时间1大于时间2, 请检查")
+        log.log("时间1大于时间2, 请检查")
 
 
 def calculate_birthday(birthday: Text) -> int:
@@ -287,12 +287,12 @@ class WeChatPushMessage:
         try:
             response = self.client.post(url, json=messages).json()
             if response.get("errcode") == 0 and response.get("errmsg") == "ok":
-                fn_print(f"⏰向【{USER}】早安信息已成功推送啦！")
+                log.log(f"⏰向【{USER}】早安信息已成功推送啦！")
             else:
-                fn_print(f"❌向【{USER}】早安信息推送失败")
-                fn_print(f"错误信息： {response}")
+                log.log(f"❌向【{USER}】早安信息推送失败")
+                log.log(f"错误信息： {response}")
         except KeyError:
-            fn_print("推送失败，请检查参数是否正确")
+            log.log("推送失败，请检查参数是否正确")
             raise KeyError("推送失败，请检查参数是否正确")
 
 

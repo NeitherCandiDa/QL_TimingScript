@@ -15,7 +15,7 @@ import urllib.parse
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-from fn_print import all_print_list
+from log import all_print_list
 
 cur_path = os.path.abspath(os.path.dirname(__file__))
 root_path = os.path.split(cur_path)[0]

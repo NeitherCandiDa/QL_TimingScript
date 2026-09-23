@@ -13,7 +13,7 @@ from datetime import datetime
 
 import httpx
 
-from fn_print import fn_print
+import log
 from get_env import get_env
 from sendNotify import send_notification_message_collection
 
@@ -42,9 +42,9 @@ class Anmusi:
             if user_info.get('status'):
                 self.nick_name = user_info.get("data").get("nickName")
             else:
-                fn_print(f"获取用户信息失败！{user_info.get('error').get('msg')}")
+                log.log(f"获取用户信息失败！{user_info.get('error').get('msg')}")
         except Exception as e:
-            fn_print("获取用户信息异常❌\n", e)
+            log.log("获取用户信息异常❌\n", e)
 
     def get_sign_in_status(self):
         try:
@@ -52,14 +52,14 @@ class Anmusi:
             response.raise_for_status()
             sign_in_status = response.json()
             if not sign_in_status.get('status'):
-                fn_print(f"获取签到状态失败！{sign_in_status.get('data').get('error')}")
+                log.log(f"获取签到状态失败！{sign_in_status.get('data').get('error')}")
                 return
             if sign_in_status.get("data").get("signed"):
-                fn_print(f"**用户: {self.nick_name}**, 今日已签到！")
+                log.log(f"**用户: {self.nick_name}**, 今日已签到！")
                 return
             self.sign_in()
         except Exception as e:
-            fn_print("获取签到状态异常❌\n", e)
+            log.log("获取签到状态异常❌\n", e)
 
     def sign_in(self):
         try:
@@ -67,11 +67,11 @@ class Anmusi:
             response.raise_for_status()
             sign_in_status = response.json()
             if sign_in_status.get("status"):
-                fn_print(f"**用户: {self.nick_name}**, 签到成功！✅")
+                log.log(f"**用户: {self.nick_name}**, 签到成功！✅")
             else:
-                fn_print(f"签到失败！{sign_in_status.get('data').get('error')}")
+                log.log(f"签到失败！{sign_in_status.get('data').get('error')}")
         except Exception as e:
-            fn_print("签到异常❌\n", e)
+            log.log("签到异常❌\n", e)
 
     def get_points(self):
         try:
@@ -80,11 +80,11 @@ class Anmusi:
             points_info = response.json()
             if points_info.get("status"):
                 points = points_info.get("data")
-                fn_print(f"**用户: {self.nick_name}**, 当前积分: {points}")
+                log.log(f"**用户: {self.nick_name}**, 当前积分: {points}")
             else:
-                fn_print(f"获取积分失败！{points_info.get('data').get('error')}")
+                log.log(f"获取积分失败！{points_info.get('data').get('error')}")
         except Exception as e:
-            fn_print("获取积分异常❌\n", e)
+            log.log("获取积分异常❌\n", e)
 
     def run(self):
         self.get_user_info()

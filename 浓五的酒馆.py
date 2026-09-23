@@ -15,7 +15,7 @@ from datetime import datetime
 
 import httpx
 
-from fn_print import fn_print
+import log
 from get_env import get_env
 from sendNotify import send_notification_message_collection
 
@@ -48,12 +48,12 @@ class Nwjg:
                 headers=self.headers,
             )
             if response.status_code != 200:
-                fn_print(f"获取活动ID失败: HTTP {response.status_code} - {response.text}")
+                log.log(f"获取活动ID失败: HTTP {response.status_code} - {response.text}")
                 return None
 
             response_data = response.json()
             if response_data.get('msg', None) is not None and "JWT expired" in response_data.get('msg'):
-                fn_print("获取活动ID失败: token已过期！")
+                log.log("获取活动ID失败: token已过期！")
                 return None
 
             # 遍历所有模块和detailList，查找title为'每日签到'的项
@@ -67,20 +67,20 @@ class Nwjg:
                             if match:
                                 return match.group(1)
                     except Exception as e:
-                        fn_print(f"解析detailJson异常: {e}")
+                        log.log(f"解析detailJson异常: {e}")
                         continue
 
-            fn_print("未找到每日签到活动")
+            log.log("未找到每日签到活动")
             return None
 
         except json.JSONDecodeError:
-            fn_print("获取活动ID失败: 响应不是有效的JSON格式")
+            log.log("获取活动ID失败: 响应不是有效的JSON格式")
             return None
         except KeyError as e:
-            fn_print(f"获取活动ID失败: 响应缺少必要字段 - {str(e)}")
+            log.log(f"获取活动ID失败: 响应缺少必要字段 - {str(e)}")
             return None
         except Exception as e:
-            fn_print(f"获取活动ID发生异常: {type(e).__name__} - {str(e)}")
+            log.log(f"获取活动ID发生异常: {type(e).__name__} - {str(e)}")
             return None
 
     def sign(self):
@@ -98,14 +98,14 @@ class Nwjg:
             if response.status_code == 200:
                 response_data = response.json()
                 if response_data['code'] == 0:
-                    fn_print(f"用户【{self.user}】 -  签到成功！获得{response_data['data']['prize']['goodsName']} - "
+                    log.log(f"用户【{self.user}】 -  签到成功！获得{response_data['data']['prize']['goodsName']} - "
                              f"签到天数： {response_data['data']['signDays']}")
                 else:
-                    fn_print(f"用户【{self.user}】 -  签到失败: {response_data['msg']}")
+                    log.log(f"用户【{self.user}】 -  签到失败: {response_data['msg']}")
             else:
-                fn_print(f"用户【{self.user}】 -  签到失败: {response.text}")
+                log.log(f"用户【{self.user}】 -  签到失败: {response.text}")
         except Exception as e:
-            fn_print(f"用户【{self.user}】 -  签到发生异常: {e}")
+            log.log(f"用户【{self.user}】 -  签到发生异常: {e}")
 
     def get_integral(self):
         try:
@@ -116,11 +116,11 @@ class Nwjg:
             # print(json.dumps(response, indent=4, ensure_ascii=False))
             if response['code'] == 0:
                 self.user = response['data']['member']['mobile']
-                fn_print(f"用户【{self.user}】 - 当前积分{response['data']['member']['points']}")
+                log.log(f"用户【{self.user}】 - 当前积分{response['data']['member']['points']}")
             else:
-                fn_print(f"查询积分失败: {response['msg']}")
+                log.log(f"查询积分失败: {response['msg']}")
         except Exception as e:
-            fn_print(f"查询积分发生异常: {e}")
+            log.log(f"查询积分发生异常: {e}")
 
 
 if __name__ == '__main__':

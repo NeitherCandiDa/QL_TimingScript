@@ -12,7 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
-from fn_print import fn_print
+import log
 from get_env import get_env
 from hykb_config import API_CONFIG, API_ENDPOINTS, ERROR_CODES, TASK_DELAYS
 from sendNotify import send_notification_message_collection
@@ -75,7 +75,7 @@ class HaoYouKuaiBao:
             if data.get('key') == ERROR_CODES["SUCCESS"]:
                 # 检查成熟度是否达到100%
                 if data['config']['csd_jdt'] == "100%":
-                    fn_print(f"={self.user_name}=, 🌽检测到玉米成熟度100%，开始收割...")
+                    log.log(f"={self.user_name}=, 🌽检测到玉米成熟度100%，开始收割...")
                     # 收割
                     self.harvest()
                     # 重新登录获取最新状态
@@ -84,18 +84,18 @@ class HaoYouKuaiBao:
                     if data['config']['grew'] == '-1':
                         plant_status = self.plant()
                         if plant_status == -1:
-                            fn_print(f"={self.user_name}=, 播种失败，没有种子，尝试购买种子...")
+                            log.log(f"={self.user_name}=, 播种失败，没有种子，尝试购买种子...")
                             # 购买种子
                             if self.buy_seeds():
                                 self.plant()
                         elif plant_status == 1:
-                            fn_print(f"={self.user_name}=, 播种成功🌾🌾🌾")
+                            log.log(f"={self.user_name}=, 播种成功🌾🌾🌾")
                         else:
-                            fn_print(f"={self.user_name}=, 播种失败")
+                            log.log(f"={self.user_name}=, 播种失败")
                     return True
             return False
         except Exception as e:
-            fn_print(f"={self.user_name}=, ❌检查玉米成熟度异常：{e}")
+            log.log(f"={self.user_name}=, ❌检查玉米成熟度异常：{e}")
             return False
 
     def __user_info(self) -> Optional[Dict[str, str]]:
@@ -140,7 +140,7 @@ class HaoYouKuaiBao:
             l_response = self._post(url=API_ENDPOINTS["login"], data=payload)
             return l_response
         except Exception as e:
-            fn_print("好游快爆-登录出现错误：{}".format(e))
+            log.log("好游快爆-登录出现错误：{}".format(e))
 
     # 浇水
     def watering(self) -> Tuple[int, int]:
@@ -162,16 +162,16 @@ class HaoYouKuaiBao:
                 data=payload
             )
             if w_response.get("key") == ERROR_CODES["SUCCESS"]:
-                fn_print("={}=, 浇水成功💧💧💧".format(self.user_name))
+                log.log("={}=, 浇水成功💧💧💧".format(self.user_name))
                 return 1, w_response["add_baomihua"]
             elif w_response.get("key") == ERROR_CODES["ALREADY_DONE"]:
-                fn_print("={}=, 今日已浇水".format(self.user_name))
+                log.log("={}=, 今日已浇水".format(self.user_name))
                 return 0, 0
             else:
-                fn_print(f"={self.user_name}=, ❌浇水出现错误：{w_response}")
+                log.log(f"={self.user_name}=, ❌浇水出现错误：{w_response}")
                 return -1, 0
         except Exception as e:
-            fn_print(f"={self.user_name}=, ❌浇水异常：{e}")
+            log.log(f"={self.user_name}=, ❌浇水异常：{e}")
             return -1, 0
 
     # 收获
@@ -192,13 +192,13 @@ class HaoYouKuaiBao:
                 data=payload
             )
             if h_response.get("key") == ERROR_CODES["SUCCESS"]:
-                fn_print("={}=, 收获成功🌽🌽🌽".format(self.user_name))
+                log.log("={}=, 收获成功🌽🌽🌽".format(self.user_name))
             elif h_response.get("key") == ERROR_CODES["NO_SEEDS"]:
-                fn_print(f"={self.user_name}=, {h_response['info']}")
+                log.log(f"={self.user_name}=, {h_response['info']}")
             else:
-                fn_print(f"={self.user_name}=, ❌收获失败：{h_response}")
+                log.log(f"={self.user_name}=, ❌收获失败：{h_response}")
         except Exception as e:
-            fn_print(f"={self.user_name}=, ❌收获异常：{e}")
+            log.log(f"={self.user_name}=, ❌收获异常：{e}")
 
     # 播种
     def plant(self) -> int:
@@ -219,17 +219,17 @@ class HaoYouKuaiBao:
                 data=payload
             )
             if p_response.get("key") == ERROR_CODES["SUCCESS"]:
-                fn_print("={}=, 播种成功🌾🌾🌾".format(self.user_name))
+                log.log("={}=, 播种成功🌾🌾🌾".format(self.user_name))
                 return 1
             else:
                 if self.seed == 0:
-                    fn_print("={}=, 种子已用完".format(self.user_name))
+                    log.log("={}=, 种子已用完".format(self.user_name))
                     return -1
                 else:
-                    fn_print(f"={self.user_name}=, ❌播种失败：{p_response}")
+                    log.log(f"={self.user_name}=, ❌播种失败：{p_response}")
                     return 0
         except Exception as e:
-            fn_print(f"={self.user_name}=, ❌播种异常：{e}")
+            log.log(f"={self.user_name}=, ❌播种异常：{e}")
 
     # 获取种子商品
     def get_goods(self) -> Optional[str]:
@@ -256,11 +256,11 @@ class HaoYouKuaiBao:
                     if id_match:
                         id = id_match.group(1)
                         return id
-                    fn_print("❌未找到种子商品pid")
+                    log.log("❌未找到种子商品pid")
             else:
-                fn_print("❌未检索到种子商品的链接")
+                log.log("❌未检索到种子商品的链接")
         except Exception as e:
-            fn_print("好游快爆-获取商品id出现错误：{}".format(e))
+            log.log("好游快爆-获取商品id出现错误：{}".format(e))
 
     def checkOrder(self, id):
         """ 验证订单 """
@@ -282,19 +282,22 @@ class HaoYouKuaiBao:
                 return False
             return True
         except Exception as e:
-            fn_print("好游快爆-验证订单出现错误：{}".format(e))
+            log.log("好游快爆-验证订单出现错误：{}".format(e))
             return False
 
     # 购买种子
     def buy_seeds(self) -> bool:
         """
         购买种子
-        :return: 
+        :return:
         """
         # 获取种子商品id
         goods_id = self.get_goods()
         if not goods_id:
-            fn_print(f"={self.user_name}=, ❌获取商品信息失败，无法购买种子")
+            log.log(f"={self.user_name}=, ❌获取商品信息失败，无法购买种子")
+            return False
+        if not self.checkOrder(goods_id):
+            log.log(f"={self.user_name}=, ⚠️订单校验未通过，无法购买种子！")
             return False
         payload = {
             "id": goods_id,
@@ -304,28 +307,18 @@ class HaoYouKuaiBao:
             "client": 1,
             "scookie": self.cookie,
         }
-        if not self.checkOrder(goods_id):
-            fn_print(f"={self.user_name}=, ⚠️订单校验未通过，无法购买种子！")
-            return False
-        cbs_response = self._post(
+        response = self._post(
             url=API_ENDPOINTS["buy_seeds"],
             data=payload
         )
-        if cbs_response.get("key") != "200":
-            fn_print(f"={self.user_name}=, ❌购买种子出现错误：{cbs_response}")
-            return False
+        # 统一处理 key（支持字符串和整数两种格式）
+        response_key = response.get("key")
+        if str(response_key) == "200":
+            log.log(f"={self.user_name}=, 购买种子成功")
+            return True
         else:
-            # 购买种子
-            bs_response = self._post(
-                url=API_ENDPOINTS["buy_seeds"],
-                data=payload
-            )
-            if bs_response['key'] == 200:
-                fn_print(f"={self.user_name}=, 购买种子成功")
-                return True
-            else:
-                fn_print(f"={self.user_name}=, ❌购买种子失败：{bs_response}")
-                return False
+            log.log(f"={self.user_name}=, ❌购买种子失败：{response}")
+            return False
 
     def get_manors_task_info(self) -> None:
         """
@@ -382,7 +375,7 @@ class HaoYouKuaiBao:
             task_list = soup.select(selector)
             return task_list
         except Exception as e:
-            fn_print(f"获取任务信息失败：{e}")
+            log.log(f"获取任务信息失败：{e}")
 
     def get_moreManorToDo_task_ids(self) -> None:
         """
@@ -424,9 +417,9 @@ class HaoYouKuaiBao:
                 data=payload
             )
             if daily_game_detail_response.get("key") == ERROR_CODES["SUCCESS"]:
-                fn_print(f"={self.user_name}=, 预约游戏任务成功，任务名称：{recommend_task['bmh_task_title']}")
+                log.log(f"={self.user_name}=, 预约游戏任务成功，任务名称：{recommend_task['bmh_task_title']}")
         except Exception as e:
-            fn_print(f"={self.user_name}=, 预约游戏任务调度任务异常：", e)
+            log.log(f"={self.user_name}=, 预约游戏任务调度任务异常：", e)
 
     def receive_yuyue_game_rewards(self, recommend_task: Dict[str, str]) -> None:
         """
@@ -449,9 +442,9 @@ class HaoYouKuaiBao:
                 data=payload
             )
             if daily_yuyue_ling_response.get("key") == ERROR_CODES["SUCCESS"]:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
+                log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
             elif daily_yuyue_ling_response.get("key") == ERROR_CODES["CORN_MATURITY_100"]:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 玉米成熟度100%，正在处理...")
+                log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 玉米成熟度100%，正在处理...")
                 # 检查并处理玉米成熟度
                 if self.check_and_handle_corn_maturity():
                     # 重新尝试领取奖励
@@ -460,14 +453,14 @@ class HaoYouKuaiBao:
                         data=payload
                     )
                     if daily_yuyue_ling_response.get("key") == ERROR_CODES["SUCCESS"]:
-                        fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
+                        log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
                     else:
-                        fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 处理后仍无法领取奖励：{daily_yuyue_ling_response}")
+                        log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 处理后仍无法领取奖励：{daily_yuyue_ling_response}")
             else:
-                fn_print(
+                log.log(
                     f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- {daily_yuyue_ling_response.get('info', '奖励领取失败❌')}")
         except Exception as e:
-            fn_print(f"={self.user_name}=, 领取预约游戏任务奖励异常：", e)
+            log.log(f"={self.user_name}=, 领取预约游戏任务奖励异常：", e)
 
     def do_tasks_by_share(self, recommend_task: Dict[str, str]) -> bool:
         """
@@ -506,17 +499,17 @@ class HaoYouKuaiBao:
             )
             if daily_share_callback_response.get("key") == ERROR_CODES["SUCCESS"] and daily_share_callback_response.get(
                     "info") == "可以领奖":
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
+                log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
                 return True
             elif daily_share_callback_response.get("key") == ERROR_CODES["TASK_READY"]:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 已经领过奖励了")
+                log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 已经领过奖励了")
                 return False
             else:
-                fn_print(
+                log.log(
                     f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- \n{daily_share_callback_response}\n不可以领奖")
                 return False
         except Exception as e:
-            fn_print(f"={self.user_name}=, 调度任务异常：", e)
+            log.log(f"={self.user_name}=, 调度任务异常：", e)
 
     def do_small_game_task(self, recommend_task: Dict[str, str]) -> bool:
         """
@@ -537,14 +530,14 @@ class HaoYouKuaiBao:
                 data=payload
             )
             if daily_small_game_response.get("key") == ERROR_CODES["SUCCESS"]:
-                fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
+                log.log(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 可以领奖了🎉🎉🎉")
                 return True
             else:
-                fn_print(
+                log.log(
                     f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- {daily_small_game_response.get('info', '❌游玩小游戏任务失败')}")
                 return False
         except Exception as e:
-            fn_print(f"={self.user_name}=, 小游戏任务调度任务异常：", e)
+            log.log(f"={self.user_name}=, 小游戏任务调度任务异常：", e)
 
     def receive_small_game_reward(self, recommend_task: Dict[str, str]) -> None:
         """
@@ -568,12 +561,12 @@ class HaoYouKuaiBao:
                 data=payload
             )
             if recevie_small_game_reward_response.get("key") == ERROR_CODES["SUCCESS"]:
-                fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
+                log.log(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
             elif recevie_small_game_reward_response.get("key") == ERROR_CODES["TASK_DONE"]:
-                fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 已经领过奖励了！")
+                log.log(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 已经领过奖励了！")
             elif recevie_small_game_reward_response.get("key") == ERROR_CODES[
                 "NEED_HARVEST"]:  # 表示成熟度已经满了，先收割再播种，再领取小游戏任务奖励
-                fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 玉米成熟度100%，正在处理...")
+                log.log(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 玉米成熟度100%，正在处理...")
                 # 检查并处理玉米成熟度
                 if self.check_and_handle_corn_maturity():
                     # 重新尝试领取奖励
@@ -582,14 +575,14 @@ class HaoYouKuaiBao:
                         data=payload
                     )
                     if recevie_small_game_reward_response.get("key") == ERROR_CODES["SUCCESS"]:
-                        fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
+                        log.log(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
                     else:
-                        fn_print(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 处理后仍无法领取奖励：{recevie_small_game_reward_response}")
+                        log.log(f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- 处理后仍无法领取奖励：{recevie_small_game_reward_response}")
             else:
-                fn_print(
+                log.log(
                     f"={self.user_name}=, 小游戏任务🎮🎮🎮-{recommend_task['bmh_task_title']}- ❌领取任务奖励失败：{recevie_small_game_reward_response}")
         except Exception as e:
-            fn_print(f"={self.user_name}=, 小游戏任务领取奖励异常：", e)
+            log.log(f"={self.user_name}=, 小游戏任务领取奖励异常：", e)
 
     def receive_share_task_reward(self, recommend_task: Dict[str, str]) -> None:
         """
@@ -612,11 +605,11 @@ class HaoYouKuaiBao:
                 data=payload
             )
             if recevie_daily_reward_response.get("key") == ERROR_CODES["SUCCESS"]:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
+                log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
             elif recevie_daily_reward_response.get("key") == ERROR_CODES["TASK_DONE"]:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 今天已经领取过了！")
+                log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 今天已经领取过了！")
             elif recevie_daily_reward_response.get("key") == ERROR_CODES["CORN_MATURITY_100"]:
-                fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 玉米成熟度100%，正在处理...")
+                log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 玉米成熟度100%，正在处理...")
                 # 检查并处理玉米成熟度
                 if self.check_and_handle_corn_maturity():
                     # 重新尝试领取奖励
@@ -625,14 +618,14 @@ class HaoYouKuaiBao:
                         data=payload
                     )
                     if recevie_daily_reward_response.get("key") == ERROR_CODES["SUCCESS"]:
-                        fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
+                        log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- ✅领取任务奖励成功！")
                     else:
-                        fn_print(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 处理后仍无法领取奖励：{recevie_daily_reward_response}")
+                        log.log(f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 处理后仍无法领取奖励：{recevie_daily_reward_response}")
             else:
-                fn_print(
+                log.log(
                     f"={self.user_name}=, 任务-{recommend_task['bmh_task_title']}- 领取任务奖励失败！-> {recevie_daily_reward_response.get('msg', recevie_daily_reward_response)}")
         except Exception as e:
-            fn_print(f"={self.user_name}=, 领取任务奖励异常：", e)
+            log.log(f"={self.user_name}=, 领取任务奖励异常：", e)
 
     def process_share_task(self, recommend_task: Dict[str, str]) -> None:
         """
@@ -667,14 +660,14 @@ class HaoYouKuaiBao:
         if not self.small_game_task_list:
             return
 
-        fn_print(f"={self.user_name}=, 开始处理 {len(self.small_game_task_list)} 个小游戏任务")
+        log.log(f"={self.user_name}=, 开始处理 {len(self.small_game_task_list)} 个小游戏任务")
 
         # 启动所有小游戏任务
         for task in self.small_game_task_list:
             self.do_small_game_task(task)
 
         # 统一等待5分钟（而不是每个任务都等5分钟）
-        fn_print(f"={self.user_name}=, 小游戏任务已启动，等待6分钟后领取奖励...")
+        log.log(f"={self.user_name}=, 小游戏任务已启动，等待6分钟后领取奖励...")
         time.sleep(TASK_DELAYS["small_game"])
 
         # 领取所有小游戏任务奖励
@@ -704,7 +697,7 @@ class HaoYouKuaiBao:
     def run(self) -> None:
         data = self.login()
         if data.get('key') == ERROR_CODES["SUCCESS"]:
-            fn_print("=" * 10 + f"【{self.user_name}】登录成功" + "=" * 10)
+            log.log("=" * 10 + f"【{self.user_name}】登录成功" + "=" * 10)
             # 优先判断成熟度是否已满
             if data['config']['csd_jdt'] == "100%":
                 # 收获
@@ -714,19 +707,19 @@ class HaoYouKuaiBao:
             if data['config']['grew'] == '-1':
                 plant_status = self.plant()
                 if plant_status == -1:
-                    fn_print("={}=, 播种失败，没有种子".format(self.user_name))
+                    log.log("={}=, 播种失败，没有种子".format(self.user_name))
                     # 购买种子
                     self.buy_seeds()
                     self.plant()
                 elif plant_status == 1:
                     ...
                 else:
-                    fn_print("={}=, 播种失败".format(self.user_name))
+                    log.log("={}=, 播种失败".format(self.user_name))
             self.watering()
-            fn_print("=" * 10 + f"【{self.user_name}】开始执行庄园任务" + "=" * 10)
+            log.log("=" * 10 + f"【{self.user_name}】开始执行庄园任务" + "=" * 10)
             self.run_task()
         else:
-            fn_print(f"={self.user_name}=, ❌登录失败：{data}")
+            log.log(f"={self.user_name}=, ❌登录失败：{data}")
 
 
 def main():

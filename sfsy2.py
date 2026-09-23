@@ -390,6 +390,7 @@ class Sfsy:
             log.log(f">>> 用户【{self.phone}】 -  领取生活权益优惠券成功！✅")
         else:
             log.log(f">>> 用户【{self.phone}】 -  领取生活权益优惠券失败！❌ - {data.get('errorMessage')}")
+        return data.get("success")
 
     async def get_coupom_list(self):
         """
@@ -410,12 +411,15 @@ class Sfsy:
         if data.get("success"):
             goods_list = data["obj"][0]["goodsList"]
             for goods in goods_list:
-                exchange_times_limit = goods["exchangeTimesLimit"]
-                if exchange_times_limit >= 7:
+                # exchange_times_limit = goods["exchangeTimesLimit"]
+                currentStore = goods["currentStore"]
+                # if exchange_times_limit >= 1 and currentStore >= 1:
+                if currentStore >= 1:
                     self.goodsNo = goods["goodsNo"]
                     log.log(f">> 当前选择券号： {self.goodsNo}")
-                    await self.get_coupom()
-                    break
+                    if await self.get_coupom():
+                        log.log('领取成功生活特权成功')
+                        break
         else:
             log.log(f">>> 用户【{self.phone}】 -  获取生活权益优惠券列表失败！❌ - {data.get('errorMessage')}")
 

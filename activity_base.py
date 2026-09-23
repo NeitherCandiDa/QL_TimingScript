@@ -6,7 +6,7 @@
 import time
 import json
 import re
-from fn_print import fn_print
+import log
 
 ACTIVITY_CONFIG = {
 
@@ -83,7 +83,7 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get("code") != 200:
-                fn_print(f"获取活动信息失败！{data.get('message')}")
+                log.log(f"获取活动信息失败！{data.get('message')}")
                 return None
             datas = data.get("data")
             for d in datas:
@@ -93,7 +93,7 @@ class BaseActivity:
                             return detail.get("link")
             return None
         except Exception as e:
-            fn_print(f"获取活动信息失败！{e}")
+            log.log(f"获取活动信息失败！{e}")
             return None
 
     def get_activity_info(self):
@@ -103,7 +103,7 @@ class BaseActivity:
         if isinstance(bp_url, dict):
             url = self.get_activity_url(bp_url['url'], bp_url['activity_area'], bp_url['activity_name'])
             if not url:
-                fn_print("任务配置存在问题，未获取到活动入口url，跳过该任务")
+                log.log("任务配置存在问题，未获取到活动入口url，跳过该任务")
                 return
         else:
             url = bp_url
@@ -130,7 +130,7 @@ class BaseActivity:
             pattern = r'window\.__DSL__\s*=\s*({.*?});'
             match = re.search(pattern, html, re.DOTALL)
             if not match:
-                fn_print(f"未找到{self.config['raffle_name']}活动的DSL数据， 请检查活动是否结束!")
+                log.log(f"未找到{self.config['raffle_name']}活动的DSL数据， 请检查活动是否结束!")
                 return
             dsl_json = json.loads(match.group(1))
             task_cmps = dsl_json.get("cmps", [])
@@ -143,7 +143,7 @@ class BaseActivity:
             # 获取各种 ID
             self._extract_activity_ids(dsl_json, task_field, raffle_field, sign_in_field, reservation_field)
         except Exception as e:
-            fn_print(f"获取{self.config['raffle_name']}活动ID时出错: {e}")
+            log.log(f"获取{self.config['raffle_name']}活动ID时出错: {e}")
 
     def _extract_activity_ids(self, dsl_json, task_field, raffle_field, sign_in_field, reservation_field):
         """
@@ -153,17 +153,17 @@ class BaseActivity:
             try:
                 self.activity_id = dsl_json['byId'][task_field]['attr']['taskActivityInfo']['activityId']
             except KeyError:
-                fn_print("⚠️任务ID解析失败")
+                log.log("⚠️任务ID解析失败")
         if raffle_field:
             try:
                 self.raffle_id = dsl_json['byId'][raffle_field]['attr']['activityInformation']['raffleId']
             except KeyError:
-                fn_print("⚠️抽奖ID解析失败")
+                log.log("⚠️抽奖ID解析失败")
         if sign_in_field:
             try:
                 self.sign_in_activity_id = dsl_json['byId'][sign_in_field]['attr']['activityInfo']['activityId']
             except KeyError:
-                fn_print("⚠️签到ID解析失败")
+                log.log("⚠️签到ID解析失败")
         if reservation_field:
             try:
                 self.reservation_activity_id = \
@@ -171,7 +171,7 @@ class BaseActivity:
                         'goodsReserveActivityInfo'][
                         'activityId']
             except KeyError:
-                fn_print("⚠️预约ID解析失败")
+                log.log("⚠️预约ID解析失败")
         self.jimuld_id = dsl_json['activityId']
 
     def _get_sign_in_field(self, sign_in_fields):
@@ -191,7 +191,7 @@ class BaseActivity:
             elif self.level == "金钻会员":
                 return sign_in_fields[2]
             else:
-                fn_print("⚠️未找到用户的会员等级, 无法执行签到")
+                log.log("⚠️未找到用户的会员等级, 无法执行签到")
                 return None
         else:
             # 默认选择第一个
@@ -200,7 +200,7 @@ class BaseActivity:
     def get_task_list(self):
         """获取任务列表"""
         if not self.activity_id:
-            fn_print("⚠️未获取到活动ID，无法获取任务列表")
+            log.log("⚠️未获取到活动ID，无法获取任务列表")
             return []
         try:
             response = self.client.get(
@@ -211,7 +211,7 @@ class BaseActivity:
             task_list_info = data.get('data', {}).get('taskDTOList', [])
             return task_list_info
         except Exception as e:
-            fn_print(f"获取任务列表时出错: {e}")
+            log.log(f"获取任务列表时出错: {e}")
             return []
 
     def sign_in(self):
@@ -232,11 +232,11 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 200:
-                fn_print(f"✅签到成功！获得积分： {data.get('data').get('awardValue')}")
+                log.log(f"✅签到成功！获得积分： {data.get('data').get('awardValue')}")
             else:
-                fn_print(f"❌签到失败！{data.get('message')}")
+                log.log(f"❌签到失败！{data.get('message')}")
         except Exception as e:
-            fn_print(f"签到时出错: {e}")
+            log.log(f"签到时出错: {e}")
 
     def get_sign_in_detail(self):
         """ 获取签到天数和累计签到奖励 """
@@ -256,7 +256,7 @@ class BaseActivity:
                     accumulated_sign_in_reward_map[award.get('awardId')] = award.get('signDayNum')
             return sign_in_day_num, accumulated_sign_in_reward_map
         except Exception as e:
-            fn_print(f"获取签到天数及签到奖励时出错: {e}")
+            log.log(f"获取签到天数及签到奖励时出错: {e}")
             return None
 
     def receive_sign_in_award(self, sign_in_activity_id, award_id, sign_in_reward_map):
@@ -274,9 +274,9 @@ class BaseActivity:
             if data.get('code') == 200:
                 days = sign_in_reward_map.get(award_id)
                 award_value = data.get('data').get('awardValue')
-                fn_print(f"累计签到{days}天的奖励领取成功！获得： {award_value}")
+                log.log(f"累计签到{days}天的奖励领取成功！获得： {award_value}")
         except Exception as e:
-            fn_print(f"领取累计签到奖励时出错: {e}")
+            log.log(f"领取累计签到奖励时出错: {e}")
 
     def handle_sign_in_award(self):
         """ 处理累计签到奖励 """
@@ -305,7 +305,7 @@ class BaseActivity:
                 time.sleep(2)
                 self.receive_reward(task_name, task_id, activity_id)
             else:
-                fn_print(f"【{task_name}】任务暂不支持，‘{task_type}’类型任务不支持‼️")
+                log.log(f"【{task_name}】任务暂不支持，‘{task_type}’类型任务不支持‼️")
 
     def complete_task(self, task_name, task_id, activity_id, task_type):
         try:
@@ -315,11 +315,11 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 200:
-                fn_print(f"✅小程序任务【{task_name}】完成！")
+                log.log(f"✅小程序任务【{task_name}】完成！")
             else:
-                fn_print(f"❌小程序任务【{task_name}】失败！-> {data.get('message')}")
+                log.log(f"❌小程序任务【{task_name}】失败！-> {data.get('message')}")
         except Exception as e:
-            fn_print(f"完成小程序任务时出错: {e}")
+            log.log(f"完成小程序任务时出错: {e}")
 
     def receive_reward(self, task_name, task_id, activity_id):
         try:
@@ -329,16 +329,16 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 200:
-                fn_print(f"✅小程序任务【{task_name}】奖励领取成功！")
+                log.log(f"✅小程序任务【{task_name}】奖励领取成功！")
             else:
-                fn_print(f"❌小程序任务【{task_name}】-> {data.get('message')}")
+                log.log(f"❌小程序任务【{task_name}】-> {data.get('message')}")
         except Exception as e:
-            fn_print(f"领取小程序任务奖励时出错: {e}")
+            log.log(f"领取小程序任务奖励时出错: {e}")
 
     def get_draw_count(self):
         """获取抽奖次数"""
         if not self.raffle_id:
-            fn_print("⚠️未获取到抽奖ID，无法获取抽奖次数")
+            log.log("⚠️未获取到抽奖ID，无法获取抽奖次数")
             return 0
         try:
             response = self.client.get(
@@ -347,13 +347,13 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 200:
-                fn_print(f"剩余抽奖次数：{data.get('data').get('count')}")
+                log.log(f"剩余抽奖次数：{data.get('data').get('count')}")
                 return data.get('data').get('count')
             else:
-                fn_print(f"获取剩余抽奖次数失败！-> {data.get('message')}")
+                log.log(f"获取剩余抽奖次数失败！-> {data.get('message')}")
                 return 0
         except Exception as e:
-            fn_print(f"获取抽奖次数时出错: {e}")
+            log.log(f"获取抽奖次数时出错: {e}")
             return 0
 
     def draw_lottery(self, **kwargs):
@@ -373,11 +373,11 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 200:
-                fn_print(f"\t\t>>> 抽奖结果: {data.get('data').get('raffleWinnerVO').get('exhibitAwardName')}")
+                log.log(f"\t\t>>> 抽奖结果: {data.get('data').get('raffleWinnerVO').get('exhibitAwardName')}")
             else:
-                fn_print(f"\t\t>>> 抽奖失败！-> {data.get('message')}")
+                log.log(f"\t\t>>> 抽奖失败！-> {data.get('message')}")
         except Exception as e:
-            fn_print(f"\t\t>>> 抽奖时出错: {e}")
+            log.log(f"\t\t>>> 抽奖时出错: {e}")
 
     def is_login(self):
         """检测Cookie是否有效，通用实现"""
@@ -386,10 +386,10 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 403:
-                fn_print("Cookie已过期或无效，请重新获取")
+                log.log("Cookie已过期或无效，请重新获取")
                 return False
         except Exception as e:
-            fn_print(f"检测Cookie时出错: {e}")
+            log.log(f"检测Cookie时出错: {e}")
             return False
         return True
 
@@ -404,7 +404,7 @@ class BaseActivity:
             if data.get('code') == 200:
                 self.user_name = data['data']['name']
         except Exception as e:
-            fn_print(f"获取用户信息时出错: {e}")
+            log.log(f"获取用户信息时出错: {e}")
 
     def get_user_total_points(self):
         """ 获取用户总积分 """
@@ -415,10 +415,10 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 200 and data.get('data'):
-                fn_print(
+                log.log(
                     f"**OPPO会员: {data.get('data').get('userName')}**，当前总积分: {data.get('data').get('userCredit')}")
         except Exception as e:
-            fn_print(f"获取用户总积分时出错: {e}")
+            log.log(f"获取用户总积分时出错: {e}")
 
     def should_draw_lottery(self):
         """判断是否应该进行抽奖"""
@@ -446,9 +446,9 @@ class BaseActivity:
             response.raise_for_status()
             data = response.json()
             if data.get('code') == 200:
-                fn_print(data.get('data').get('actions')[0].get('actionInfo'))
+                log.log(data.get('data').get('actions')[0].get('actionInfo'))
         except Exception as e:
-            fn_print(f"预约新商品时出错: {e}")
+            log.log(f"预约新商品时出错: {e}")
 
     def run(self):
         # 首先检查登录状态和获取用户信息
@@ -456,7 +456,7 @@ class BaseActivity:
             return
         self.get_user_info()
         if self.user_name:
-            fn_print(f"🔹 当前账户：{self.user_name}")
+            log.log(f"🔹 当前账户：{self.user_name}")
         self.get_activity_info()
         self.sign_in()
         self.reservation_new_products(self.reservation_activity_id)
@@ -468,18 +468,18 @@ class BaseActivity:
         if self.should_draw_lottery():
             draw_count = self.get_draw_count()
             if draw_count > 0:
-                fn_print(f"🎲 开始抽奖，共{draw_count}次")
+                log.log(f"🎲 开始抽奖，共{draw_count}次")
                 for i in range(draw_count):
-                    fn_print(f"第{i + 1}次抽奖：", end="")
+                    log.log(f"第{i + 1}次抽奖：", end="")
                     if self.config.get('draw_extra_params'):
                         self.draw_lottery(**self.config['draw_extra_params'])
                     else:
                         self.draw_lottery()
                     time.sleep(1.5)
             else:
-                fn_print("🎲 当前没有可用的抽奖次数")
+                log.log("🎲 当前没有可用的抽奖次数")
         else:
-            fn_print("🚫 抽奖功能已关闭，跳过抽奖")
+            log.log("🚫 抽奖功能已关闭，跳过抽奖")
 
         # 显示账户总积分
         self.get_user_total_points()

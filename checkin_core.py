@@ -5,7 +5,7 @@
 # @EditTime         2026/3/12
 # 通用签到核心模块 - 支持多站点签到
 import httpx
-from fn_print import fn_print
+import log
 from get_env import get_env
 from datetime import datetime
 from sendNotify import send_notification_message_collection
@@ -30,11 +30,11 @@ class CheckInClient:
         self.base_url = base_url
 
         if not user_id:
-            fn_print("未配置用户ID！")
+            log.log("未配置用户ID！")
             self.client = None
             return
         if not cookie:
-            fn_print("未获取到cookie！")
+            log.log("未获取到cookie！")
             self.client = None
             return
 
@@ -76,22 +76,22 @@ class CheckInClient:
                 if data is None:
                     return
                 if data.get("success"):
-                    fn_print(
+                    log.log(
                         f"{self.user_name} - {data.get('data').get('checkin_date')} - {data.get('message')}🎉，获得💲{data.get('data').get('quota_awarded') / 500000}"
                     )
                 else:
-                    fn_print(f"{self.user_name} - " + data.get("message"))
+                    log.log(f"{self.user_name} - " + data.get("message"))
             else:
-                fn_print(f"{self.user_name} - 签到异常！{response.text}")
+                log.log(f"{self.user_name} - 签到异常！{response.text}")
         except httpx.RequestError as e:
-            fn_print(f"{self.user_name} - ❌签到请求失败，{e}")
+            log.log(f"{self.user_name} - ❌签到请求失败，{e}")
         except Exception as e:
-            fn_print(f"{self.user_name} - ❌签到出现错误，{e}")
+            log.log(f"{self.user_name} - ❌签到出现错误，{e}")
         finally:
             self.get_user_info()
             user_name = self.user_name or "未知用户"
             quota = self.quota or "未知"
-            fn_print(f"用户：{user_name} | 当前余额：💲{quota}")
+            log.log(f"用户：{user_name} | 当前余额：💲{quota}")
             self.client.close()
 
     def get_user_info(self):
@@ -113,11 +113,11 @@ class CheckInClient:
                     else:
                         self.quota = None
                 else:
-                    fn_print(data)
+                    log.log(data)
         except httpx.RequestError as e:
-            fn_print(f"❌获取用户信息请求失败，{e}")
+            log.log(f"❌获取用户信息请求失败，{e}")
         except Exception as e:
-            fn_print(f"❌获取用户信息出现错误，{e}")
+            log.log(f"❌获取用户信息出现错误，{e}")
 
     @staticmethod
     def _parse_json(response, scene):
@@ -125,7 +125,7 @@ class CheckInClient:
         try:
             return response.json()
         except ValueError as e:
-            fn_print(f"❌{scene}解析失败，{e}")
+            log.log(f"❌{scene}解析失败，{e}")
             return None
 
 
@@ -182,7 +182,7 @@ if __name__ == "__main__":
                 config["notify_title"],
             )
         else:
-            fn_print(f"未知站点: {site_key}，可用站点: {list(SITES.keys())}")
+            log.log(f"未知站点: {site_key}，可用站点: {list(SITES.keys())}")
     else:
-        fn_print("用法: python checkin_core.py <site_key>")
-        fn_print(f"可用站点: {list(SITES.keys())}")
+        log.log("用法: python checkin_core.py <site_key>")
+        log.log(f"可用站点: {list(SITES.keys())}")
