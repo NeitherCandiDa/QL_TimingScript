@@ -1,0 +1,762 @@
+# -*- coding=UTF-8 -*-
+# @Project          QL_TimingScript
+# @fileName         中国移动云盘-新版.py
+# @author           Echo
+# @EditTime         2026/9/23
+# cron: 0 0 8 * * *
+# const $ = new Env('中国移动云盘');
+"""
+中国移动云盘（云朵中心 / 云盘专属 AI豆）签到脚本 —— 2026-09 接口版本（v3）
+
+环境变量：ydyp_ck，格式  <authorization>#<手机号>#<可选 jwtToken>#<可选 设备号>
+多个账号用 @ 分割，例如：
+  ydyp_ck=Basic xxxxxxxx#13800000000
+
+覆盖的领豆入口（均以 App/H5 接口面为准，非老脚本硬编码）：
+  A. 云朵中心 sign_in_3
+     1) 每日签到 startSignIn
+     2) 签到翻倍 multiple（每月一次）
+     3) 任务点击 task/click + 逐条领奖 receiveTask（含 FINISH 已完成的补领）
+     4) 记录豆领取 receiveV3（含 cloudType=1 的膨胀/月度奖励 receiveTaskExpansion）
+     5) 上传文件任务（106 手动上传 / 522 当月上传满100个）走 OSE 新通道
+  B. 老 market 接口（实测存活）：抽奖 playoffic、连续备份奖励 backupgift、通知任务 msgPushOn
+  C. 独立活动巡检 activity_patrol：直播间小红花、新春礼开福袋、TokenPK 阶段奖励、云盘日盲盒/礼品、邮箱短信
+     —— 每个活动先查状态，只在「可领/有库存/有次数」时才动作，无库存/已领/已结束自动跳过。
+
+说明：
+  1) authorization 从 App 抓包获得（形如 "Basic bW9iaWxl..."），是换取 ssoToken 的凭据。
+     凭据内嵌 13 位过期时间戳，过期后接口返回 05050006「暂无权限！」，需重新抓取。
+  2) 第 1 段或第 3 段也可直接填 jwtToken（形如 eyJhbGci....xx.yy），脚本识别后直接使用。
+  3) deviceId 部分接口强制要求，缺省时脚本用账号派生的固定值，实测可通过。
+  4) 云朵已改名 AI豆（2026-07-31，1:1）；接口前缀 /ycloud/，老 market 接口部分仍在服役。
+  5) 兑换接口带滑块验证（getSlidePuzzle + puzzleOffset），脚本无法完成，请手动兑换。
+  6) AI豆需手动领取，跨周未领会失效，建议每日至少执行一次。
+  7) 「当月上传文件满100个」的补足功能**实测无效**：OSE 活动上传（能完成「手动上传一个文件」）
+     不计入该任务的 `process` 计数（上传 59 个后仍为 41），家庭云 V3 通道又要求账号已开通家庭云
+     （`queryFamilyCloud` 返回空列表）。故该开关默认关闭（`ydyp_upload_fill=1` 才启用），
+     522 只能靠真实上传/PC 客户端自然累计。
+
+用法：
+  python 中国移动云盘-新版.py           # 正常执行：上述 A+B+C 全流程
+  python 中国移动云盘-新版.py --check   # 只读自检：凭据 + 豆 + 任务 + 待领明细 + 各活动状态
+"""
+import asyncio
+import hashlib
+import json
+import os
+import random
+import sys
+import time
+import uuid
+from datetime import datetime
+
+import httpx
+
+import log
+from get_env import get_env
+from sendNotify import send_notification_message_collection
+
+# ── 常量 ────────────────────────────────────────────────────────────────
+UA = ("Mozilla/5.0 (Linux; Android 15; PJZ110 Build/AP3A.240617.008; wv) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Version/4.0 Chrome/130.0.6723.58 Mobile Safari/537.36 MCloudApp/13.2.2")
+
+H5 = "https://m.mcloud.139.com"                     # 新接口平台（与云朵中心 H5 同源）
+YCLOUD = H5 + "/ycloud"
+MARKET = "https://caiyun.feixin.10086.cn"           # 老 market 平台（抽奖/备份/通知仍在此）
+SIGN_SALT = "sekaMdYYLIZfbCfm"                      # x-signature 盐值（前端 char-code 混淆还原）
+SOURCE_ID = "001005"                                # 云盘渠道号：换 ssoToken 与登录必须一致
+CLIENT_VERSION = "13.2.2"
+MARKET_NAME = "sign_in_3"                           # 云朵中心活动标识
+UPLOAD_MARKET = "National_redCavalry"               # OSE 上传通道唯一可用活动（实测 8 个候选仅此通过）
+DRAW_TIMES = 3                                      # 单次运行抽奖次数（剩余次数以接口为准）
+UPLOAD_FILL = os.environ.get("ydyp_upload_fill", "0") == "1"   # 522 补足：**实测无效**（OSE 上传不计入 522 计数），默认关闭
+
+is_redeem = False                                   # 兑换需过滑块，无法脚本化，仅做提示
+
+
+def _md5(s: str) -> str:
+    return hashlib.md5(s.encode("utf-8")).hexdigest()
+
+
+def _sign_headers(params_str: str = "") -> dict:
+    """云朵中心网关签名头：x-signature = MD5(salt + rid + ts + nonce + params串 + salt)"""
+    rid, nonce = str(uuid.uuid4()), str(uuid.uuid4())
+    ts = str(int(time.time() * 1000))
+    return {"x-request-id": rid, "x-timestamp": ts, "x-nonce": nonce,
+            "x-signature": _md5(SIGN_SALT + rid + ts + nonce + params_str + SIGN_SALT)}
+
+
+class MobileCloudDisk:
+    """中国移动云盘 —— 云朵中心（AI豆）任务执行器"""
+
+    def __init__(self, cookie: str):
+        fields = (cookie or "").split("#")
+        self.authorization = fields[0].strip() if fields else ""
+        self.account = fields[1].strip() if len(fields) > 1 else ""
+        self.token = fields[2].strip() if len(fields) > 2 else ""
+        self.device_id = (fields[3].strip() if len(fields) > 3 and fields[3].strip()
+                          else "mcloud" + _md5(self.account)[:24])
+        self.show_account = ((self.account[:3] + "****" + self.account[-4:])
+                             if len(self.account) >= 11 else self.account)
+        self.jwt = ""
+        self.beans = None
+        self.signed_today = None
+        self.info = {}                                  # infoV3 全量结果（含 receiveList）
+        self.client = httpx.AsyncClient(verify=False, timeout=60, follow_redirects=True)
+        self.base_headers = {"User-Agent": UA, "Accept": "*/*",
+                             "Referer": H5 + "/portal/newsignin/index.html", "Origin": H5,
+                             "deviceId": self.device_id}
+
+    # ── 基础设施 ────────────────────────────────────────────────────────
+    def _h(self, extra: dict = None) -> dict:
+        h = dict(self.base_headers)
+        if self.jwt:
+            h["jwtToken"] = self.jwt
+        if extra:
+            h.update(extra)
+        return h
+
+    async def _req(self, method: str, url: str, **kw):
+        """统一请求 + JSON 解析；异常吞掉返回 None，避免单点失败中断整轮。
+        quiet=True 时不再打印「非 JSON 响应」告警——给预期可能 404/未部署的探测型接口用。"""
+        quiet = kw.pop("quiet", False)
+        try:
+            resp = await self.client.request(method, url, **kw)
+            try:
+                return resp.json()
+            except ValueError:
+                if not quiet:
+                    snippet = " ".join(resp.text.split())[:100]      # 404 会回整页 HTML，压成单行再入日志
+                    log.log(f"    ⚠️ 非 JSON 响应 {resp.status_code}: {snippet}")
+                return None
+        except Exception as e:
+            log.log(f"    ❌ 请求异常 {url.split('?')[0]}: {e}")
+            return None
+
+    async def _yget(self, path: str, params: dict = None, quiet: bool = False):
+        return await self._req("GET", YCLOUD + path, params=params, headers=self._h(), quiet=quiet)
+
+    async def _ypost(self, path: str, payload: dict = None, quiet: bool = False):
+        return await self._req("POST", YCLOUD + path, json=payload or {},
+                               headers=self._h({"Content-Type": "application/json;charset=UTF-8"}), quiet=quiet)
+
+    async def _mget(self, path: str):
+        """老 market 接口（抽奖 / 备份 / 通知）"""
+        return await self._req("GET", MARKET + path, headers=self._h())
+
+    async def _balance(self):
+        """读豆余额（infoV3.result.total 为权威值）"""
+        r = await self._yget("/signin/page/infoV3", {"client": "app"})
+        if r and r.get("code") == 0:
+            self.info = r.get("result") or {}
+            return self.info.get("total")
+        r = await self._yget("/signin/page/getCloudNum", {"client": "app"})
+        return (r or {}).get("result") if r and r.get("code") == 0 else None
+
+    # ── 登录链路（实测：querySpecTokenV2 → /ycloud/auth-service/auth/tyrzLogin）────
+    async def login(self) -> bool:
+        if self.jwt:
+            return True
+        # 形态 1/2：第 1 段或第 3 段直接是 jwtToken
+        for cand, label in ((self.authorization, "第1段"), (self.token, "第3段")):
+            if cand.count(".") == 2 and len(cand) > 80:
+                self.jwt = cand
+                log.log(f"  🔑 使用{label}直填的 jwtToken（{self.show_account}）")
+                return True
+
+        sso = await self._query_sso_token()
+        if sso and await self._tyrz_login(sso):
+            return True
+        return False
+
+    async def _query_sso_token(self):
+        """① authorization → ssoToken（toSourceId 必须与登录 sourceId 一致，实测 001005）"""
+        r = await self._req("POST", "https://user-njs.yun.139.com/user/querySpecTokenV2",
+                            headers={"authorization": self.authorization, "User-Agent": UA,
+                                     "Content-Type": "application/json"},
+                            json={"toSourceId": SOURCE_ID})
+        if r and r.get("success") and (r.get("data") or {}).get("token"):
+            return r["data"]["token"]
+        if (r or {}).get("code") == "05050006":
+            log.log("  ❌ authorization 已失效（05050006 暂无权限），请重新抓包更新 ydyp_ck")
+        else:
+            log.log(f"  ❌ 换取 ssoToken 失败：{r}")
+        return None
+
+    async def _tyrz_login(self, sso: str) -> bool:
+        """② ssoToken → jwtToken（POST JSON；签名字符串为空串）"""
+        body = {"token": sso, "openAccount": False,
+                "marketName": MARKET_NAME, "sourceId": SOURCE_ID}
+        h = {"Content-Type": "application/json;charset=UTF-8", "type": "signupPlatform",
+             "deviceId": self.device_id, "User-Agent": UA,
+             "Referer": H5 + "/portal/newsignin/index.html", "Origin": H5}
+        h.update(_sign_headers(""))
+        r = await self._req("POST", H5 + "/ycloud/auth-service/auth/tyrzLogin",
+                            content=json.dumps(body, separators=(",", ":")), headers=h)
+        if r and r.get("code") == 0 and (r.get("result") or {}).get("token"):
+            self.jwt = r["result"]["token"]
+            log.log(f"  🔑 登录成功（{self.show_account}）")
+            return True
+        log.log(f"  ❌ 换取 jwtToken 失败：{r}")
+        return False
+
+    # ── 状态查询 ────────────────────────────────────────────────────────
+    async def query_status(self):
+        """签到状态（infoV3）+ 豆余额 + 待领明细"""
+        r = await self._yget("/signin/page/infoV3", {"client": "app"})
+        if r and r.get("code") == 0:
+            res = r.get("result") or {}
+            self.info = res
+            today = datetime.now().day
+            item = next((x for x in (res.get("cal") or [])
+                         if x.get("d") == today and x.get("currentMonth") == 1), None)
+            self.signed_today = bool(item and item.get("s"))
+            self.beans = res.get("total")
+            log.log("  📅 签到：%s（连签 %s 天｜本月 %s 天｜单次 +%s 豆）"
+                    % ("今日已签 ⏭️" if self.signed_today else "今日未签 🉑",
+                       res.get("signCount"), res.get("monthDays"), res.get("signInPoints")))
+            log.log(f"  🫘 AI豆余额：{self.beans}（接口标记待领 {res.get('toReceive')}）")
+            return res
+        log.log(f"  ⚠️ 查询签到状态失败：{r}")
+        return None
+
+    # ── 签到 ────────────────────────────────────────────────────────────
+    async def sign_in(self):
+        """点击即签到（接口幂等：今日已签仍返回 todaySignIn=true）"""
+        r = await self._yget("/signin/page/startSignIn", {"client": "app"})
+        if r and r.get("code") == 0:
+            res = r.get("result") or {}
+            if res.get("todaySignIn"):
+                log.log(f"  ✅ 签到完成（+{res.get('signInPoints')} 豆｜连签 {res.get('signCount')} 天）")
+            else:
+                log.log(f"  ⚠️ 签到未生效：{res}")
+        elif r and r.get("code") in (614, 615):
+            log.log("  ⚠️ 签到失败（614/615 风控），稍后重试")
+        else:
+            log.log(f"  ❌ 签到失败：{r}")
+
+    # ── 签到翻倍（每月一次）──────────────────────────────────────────────
+    async def sign_double(self):
+        r = await self._yget("/signin/page/multiple", {"client": "app"})
+        if r and r.get("code") == 0:
+            res = r.get("result") or {}
+            log.log(f"  ✖️2️⃣ 签到翻倍领取成功：+{res.get('cloudCount')} 豆")
+        elif r and "已领取" in str(r.get("msg")):
+            log.log(f"  ✖️2️⃣ 签到翻倍：{r.get('msg')} ⏭️")
+        else:
+            log.log(f"  ✖️2️⃣ 签到翻倍：{r}")
+
+    # ── 记录豆领取（receiveV3 / receiveTaskExpansion）────────────────────
+    async def claim_records(self):
+        """
+        infoV3.receiveList 三类：
+          cloudType=0 → POST /signin/page/receiveV3 {client, cloudId=recordId, cloudType}
+          cloudType=1 → GET  /signin/page/receiveTaskExpansion?acceptDate=YYYYMM（膨胀/月度）
+          cloudType=2 → 下月可领取，跳过
+        """
+        if not self.info:
+            await self.query_status()
+        items = self.info.get("receiveList") or []
+        if not items:
+            log.log("  🫘 待领取记录：无 ⏭️")
+            return 0
+        total = pending = lock_streak = 0
+        for it in items:
+            ct, num = it.get("cloudType"), int(it.get("cloudNum") or 0)
+            if ct == 2:
+                log.log(f"  🫘 {num} 豆：下月可领取 ⏭️")
+                continue
+            if ct == 1:
+                date = it.get("acceptDate") or datetime.now().strftime("%Y%m")
+                rr = await self._yget("/signin/page/receiveTaskExpansion", {"acceptDate": date})
+                if not (rr and rr.get("code") == 0):
+                    rr = await self._mget(f"/market/signin/page/receiveTaskExpansion?acceptDate={date}")
+                if rr and rr.get("code") == 0:
+                    out = rr.get("result")
+                    got = out.get("cloudCount") if isinstance(out, dict) else out
+                    log.log(f"  🫘 膨胀/月度奖励领取成功：{got}（{date}）")
+                    total += num
+                else:
+                    log.log(f"  🫘 膨胀/月度奖励领取失败：{rr}")
+                continue
+            rr = None
+            tries = 1 if lock_streak >= 2 else 3      # 连续锁定后不再逐笔重试，节省运行时间
+            for attempt in range(1, tries + 1):
+                rr = await self._ypost("/signin/page/receiveV3",
+                                       {"client": "app", "cloudId": it.get("recordId"), "cloudType": ct})
+                if rr and rr.get("code") == 0:
+                    break
+                if (rr or {}).get("code") not in (614, 615):
+                    break
+                if attempt < tries:
+                    await asyncio.sleep(3 * attempt)
+            if rr and rr.get("code") == 0:
+                lock_streak = 0
+                got = (rr.get("result") or {}).get("receive") or num
+                log.log(f"  🫘 领取 {got} 豆 ✅（recordId={it.get('recordId')}）")
+                total += int(got or 0)
+            else:
+                pending += num
+                lock_streak += 1
+                log.log(f"  🫘 领取失败（{num} 豆, recordId={it.get('recordId')}, code={(rr or {}).get('code')}）："
+                        f"{(rr or {}).get('msg')}"
+                        + ("｜614/615=服务端锁定，下次运行自动重试" if (rr or {}).get("code") in (614, 615) else ""))
+            await asyncio.sleep(random.uniform(0.8, 1.6))
+        if total:
+            log.log(f"  🫘 记录豆合计领取：+{total}")
+        if pending:
+            log.log(f"  🫘 暂未领到：{pending} 豆（服务端锁定，稍后/下次运行重试）")
+        return total
+
+    # ── 任务 ────────────────────────────────────────────────────────────
+    async def task_list(self):
+        body = {"marketname": MARKET_NAME, "client": 1, "clientVersion": CLIENT_VERSION}
+        r = await self._ypost("/signin/task/taskListV3", body)
+        if not (r and r.get("code") == 0):
+            log.log(f"  ❌ 获取任务列表失败：{r}")
+            return
+        tasks = r.get("result") or []
+        clicked = skipped = 0
+        for t in tasks:
+            tid, name, gid = t.get("id"), (t.get("name") or "").strip(), t.get("groupid")
+            if gid in ("hidden", "hiddenabc") and tid not in (106, 522):
+                continue
+            if t.get("state") != "FINISH":
+                await self._click_task(tid, name)
+                if tid in (106, 522):                       # 上传类任务：走 OSE 新通道
+                    await self.upload_file()
+                await asyncio.sleep(random.uniform(1.0, 2.0))
+                clicked += 1
+            else:
+                skipped += 1
+        # 领奖轮：全部任务都试一次（接口幂等，未完成返回 result:0；FINISH 的补领不再漏）
+        gained = 0
+        for t in tasks:
+            tid, name = t.get("id"), (t.get("name") or "").strip()
+            got = await self._claim_task(tid, name)
+            gained += got or 0
+        log.log(f"  🗂️ 任务处理：点击 {clicked} 条｜已完成 {skipped} 条｜本次领到 {gained} 豆")
+
+    async def _click_task(self, task_id, name=""):
+        r = await self._yget("/signin/task/click", {"key": "task", "id": task_id})
+        ok = bool(r and r.get("code") == 0)
+        log.log(f"      {'✅' if ok else '⏭️'} {name[:20]}（id={task_id}）{'' if ok else '：' + str(r)}")
+
+    async def _claim_task(self, task_id, name=""):
+        """领取任务奖励（任务未完成时返回 result:0）"""
+        r = await self._yget("/signin/page/receiveTask", {"taskId": task_id})
+        if r and r.get("code") == 0 and (r.get("result") or 0) > 0:
+            log.log(f"      🎁 「{name[:20]}」领取 {r['result']} 豆")
+            return int(r["result"])
+        return 0
+
+    # ── 抽奖 / 备份 / 通知（老接口，实测存活）────────────────────────────
+    async def draw(self):
+        info = await self._mget("/market/playoffic/drawInfo")
+        if not (info and info.get("code") == 0):
+            log.log(f"  ⏭️ 抽奖信息不可用：{info}")
+            return
+        remain = (info.get("result") or {}).get("surplusNumber", 0)
+        times = min(remain, DRAW_TIMES)
+        log.log(f"  🎰 剩余抽奖 {remain} 次，本次抽 {times} 次")
+        for _ in range(times):
+            await asyncio.sleep(random.uniform(1.2, 2.2))
+            r = await self._mget("/market/playoffic/draw")
+            if r and r.get("code") == 0:
+                log.log(f"      🎉 抽中：{(r.get('result') or {}).get('prizeName')}")
+            else:
+                log.log(f"      ⏭️ 抽奖返回：{r}")
+
+    async def backup_cloud(self):
+        """连续备份奖励 + 每月膨胀云朵"""
+        info = await self._mget("/market/backupgift/info")
+        state = ((info or {}).get("result") or {}).get("state")
+        if state == 0:
+            r = await self._mget("/market/backupgift/receive")
+            if r and r.get("code") == 0:
+                res = r.get("result")
+                got = res.get("result") if isinstance(res, dict) else res
+                log.log(f"  ☁️ 连续备份奖励领取成功：{got} 豆")
+            else:
+                log.log(f"  ☁️ 连续备份奖励领取失败：{r}")
+        elif state == 1:
+            log.log("  ☁️ 连续备份奖励：本月已领 ⏭️")
+        elif state is None:
+            log.log(f"  ☁️ 连续备份奖励：接口返回异常 ⏭️ {info}")
+        else:
+            log.log(f"  ☁️ 连续备份奖励：本月未备份，暂无 ⏭️（state={state}）")
+
+        exp = await self._mget("/market/signin/page/taskExpansion")
+        res = (exp or {}).get("result") or {}
+        if res.get("preMonthBackup") and not res.get("curMonthBackupTaskAccept"):
+            accept_date = res.get("aeptDate") or datetime.now().strftime("%Y-%m-%d")
+            r = await self._mget(f"/market/signin/page/receiveTaskExpansion?acceptDate={accept_date}")
+            if r and r.get("code") == 0:
+                out = r.get("result")
+                got = out.get("cloudCount") if isinstance(out, dict) else out
+                log.log(f"  ☁️ 膨胀云朵领取成功：{got}")
+            else:
+                log.log(f"  ☁️ 膨胀云朵：{r}")
+        else:
+            log.log("  ☁️ 膨胀云朵：暂无可领 ⏭️")
+
+    async def notice_task(self):
+        """开启 App 通知奖励（msgPushOn）"""
+        r = await self._mget("/market/msgPushOn/task/status")
+        res = (r or {}).get("result") or {}
+        if not res:
+            log.log(f"  ⏭️ 通知任务不可用：{r}")
+            return
+        log.log(f"  🔔 通知已开启 {res.get('onDuaration')} 天（累计 {res.get('total')} 天）")
+        for t, st in ((1, res.get("firstTaskStatus")), (2, res.get("secondTaskStatus"))):
+            if st == 2:      # 2 = 可领取
+                rr = await self._req("POST", MARKET + "/market/msgPushOn/task/obtain",
+                                     json={"type": t},
+                                     headers=self._h({"Content-Type": "application/json"}))
+                if rr and rr.get("code") == 0:
+                    log.log(f"  🔔 通知任务{t} 领取成功：{rr.get('result')}")
+                else:
+                    log.log(f"  🔔 通知任务{t} 领取返回：{rr}")
+
+    async def wx_sign(self):
+        """微信公众号签到（2026-09 实测：活动已结束）"""
+        r = await self._mget("/market/playoffic/followSignInfo?isWx=true")
+        if r and r.get("code") == 0:
+            log.log(f"  📝 公众号签到：{r.get('result')}")
+        elif (r or {}).get("msg") == "活动已结束":
+            log.log("  📝 公众号签到：活动已结束 ⏭️")
+        else:
+            log.log(f"  📝 公众号签到：{r}")
+
+    # ── 上传文件（任务 106 手动上传 / 522 当月上传满100个）───────────────
+    async def upload_file(self, count=1):
+        """
+        新通道（H5 OSE，实测唯一可用活动 = National_redCavalry）：
+          POST /ycloud/api/cloud/ose/activity/getUploadUrl {marketName,fileName,fileSize}
+            → {uploadUrl, uploadId, fileId, hashAlgorithm}
+          PUT  <uploadUrl>（原始字节）
+          POST /ycloud/api/cloud/ose/file/complete {uploadId,fileId,contentHash,contentHashAlgorithm}
+        实测：上传 1 个文件即把任务 106 从 currstep=1 推到 3（FINISH）。
+        """
+        ok = fail = streak = 0
+        total = max(1, count)
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        for i in range(total):
+            fname = "mock_%s_%02d.txt" % (stamp, i + 1)
+            data = ("mcloud mock doc %s" % fname).encode()
+            r = await self._ypost("/api/cloud/ose/activity/getUploadUrl",
+                                  {"marketName": UPLOAD_MARKET, "fileName": fname, "fileSize": len(data)})
+            res = (r or {}).get("result") or {}
+            if not (r and r.get("code") == 0 and res.get("uploadUrl")):
+                fail += 1
+                streak += 1
+                log.log(f"      📤 取上传地址失败（{i + 1}/{total}）：{(r or {}).get('msg') or r}")
+                if streak >= 3:
+                    log.log("      📤 连续失败 3 次，中止本批上传（疑似频控），下次运行继续")
+                    break
+                await asyncio.sleep(3)
+                continue
+            try:
+                resp = await self.client.put(res["uploadUrl"], content=data,
+                                             headers={"Content-Type": "application/octet-stream"})
+            except Exception as e:
+                fail += 1
+                streak += 1
+                log.log(f"      📤 PUT 异常（{i + 1}/{total}）：{e}")
+                continue
+            if resp.status_code not in (200, 201, 204):
+                fail += 1
+                streak += 1
+                log.log(f"      📤 PUT 失败 HTTP {resp.status_code}（{i + 1}/{total}）")
+                continue
+            algo = (res.get("hashAlgorithm") or "SHA256").upper()
+            ch = (hashlib.sha256(data).hexdigest() if algo == "SHA256"
+                  else hashlib.md5(data).hexdigest())
+            rr = await self._ypost("/api/cloud/ose/file/complete",
+                                   {"uploadId": res.get("uploadId"), "fileId": res.get("fileId"),
+                                    "contentHash": ch, "contentHashAlgorithm": res.get("hashAlgorithm") or "SHA256"})
+            if rr and rr.get("code") == 0:
+                ok += 1
+                streak = 0
+            else:
+                fail += 1
+                streak += 1
+                log.log(f"      📤 完成上传失败（{i + 1}/{total}）：{rr}")
+            if total > 5 and (i + 1) % 10 == 0:
+                log.log(f"      📤 进度 {i + 1}/{total}（成功 {ok}｜失败 {fail}）")
+            await asyncio.sleep(random.uniform(0.6, 1.2))
+        if ok:
+            log.log(f"      📤 本次上传 {ok} 个文件（失败 {fail}）")
+        return ok
+
+    async def upload_fill_522(self, need: int):
+        """
+        522 补足开关（默认关闭）。**实测无效**，保留仅为口径变化时备用：
+          - OSE 活动上传能完成「手动上传一个文件」(106)，但不计入 522 的 process；
+          - 家庭云 V3 上传通道（group.yun.139.com/hcy/family/adapter/…）鉴权虽通过
+            （缺字段时回 1809111400），但要求账号已开通家庭云，本账号 `queryFamilyCloud` 返回空列表。
+        """
+        if need <= 0:
+            return
+        if not UPLOAD_FILL:
+            log.log(f"      📤 522 还差 {need} 个（不统计本通道上传，需真实上传/PC 客户端累计）")
+            return
+        log.log(f"      📤 522 补足上传 {need} 个文件（注意：实测该通道不计入 522）…")
+        await self.upload_file(count=min(need, 100))
+
+    # ── 活动巡检（云朵中心之外的独立领豆/领奖入口）───────────────────────
+    async def live_room_flower(self):
+        """直播间小红花：首次参与直接赠花（实测领到 10 朵）"""
+        info = await self._yget("/liveRoomFeedback/user/info")
+        res = (info or {}).get("result") or {}
+        if not res:
+            log.log(f"    🌸 直播间：接口不可用 ⏭️")
+            return
+        if res.get("hasNotReceivedRedFlower") == 1:
+            r = await self._ypost("/liveRoomFeedback/firstParticipate/give")
+            out = (r or {}).get("result") or {}
+            if r and r.get("code") == 0:
+                log.log(f"    🌸 首参领红花：{out.get('prizeName')}（{out.get('flowerNum')} 朵）✅")
+            else:
+                log.log(f"    🌸 首参领红花失败：{r}")
+        else:
+            log.log(f"    🌸 直播间红花：已领 ⏭️（库存 {res.get('flowerCnt')}｜有效期 {res.get('redFlowerValidDate')}）")
+        rf = await self._yget("/liveRoomFeedback/redFlower/queryRevivalFlowers")
+        if rf and rf.get("code") == 0:
+            log.log(f"    🌸 可复活红花：{rf.get('result')}")
+
+    async def spring_gift(self):
+        """新春礼：开福袋抽奖（有免费次数就抽）"""
+        tl = await self._yget("/simple/springgift/getTaskList")
+        reg_ok = True
+        for t in ((tl or {}).get("result") or []):
+            if t.get("complete") or not t.get("needRegister") or not reg_ok:
+                continue
+            r = await self._ypost("/simple/springgift/registerTask", {"mark": t.get("id")}, quiet=True)
+            if r is None:                      # 该路由服务端未部署（404），后续不再尝试
+                reg_ok = False
+                log.log("    🧧 任务登记接口未部署（registerTask 404），跳过登记 ⏭️")
+        cnt = await self._yget("/simple/springgift/getLotteryCount")
+        try:
+            n = int((cnt or {}).get("result") or 0)
+        except (TypeError, ValueError):
+            n = 0
+        if n <= 0:
+            log.log("    🧧 新春礼开福袋：无可用次数 ⏭️")
+            return
+        log.log(f"    🧧 新春礼开福袋：可用 {n} 次")
+        for _ in range(min(n, 6)):
+            r = await self._ypost("/simple/springgift/lotteryPrize", {"isClient": True})
+            name = ((r or {}).get("result") or {}).get("prizeName")
+            log.log(f"        {'🎉 抽中：' + str(name) if name else '⏭️ 本次未中奖'}")
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+
+    async def token_pk(self):
+        """TokenPK：阶段进度奖励 + 抽奖机会"""
+        home = await self._yget("/tokenpk/toplist/progress/queryHome")
+        res = (home or {}).get("result") or {}
+        if not res:
+            log.log("    🏆 TokenPK：活动未开 ⏭️")
+            return
+        used = res.get("usedToken")
+        stages = res.get("rewardStages") or []
+        log.log(f"    🏆 TokenPK：已用 {used} token｜{len(stages)} 个阶段")
+        for st in stages:
+            if st.get("status") == 1:                     # 1 = 可领取
+                r = await self._ypost("/tokenpk/toplist/progress/receiveReward",
+                                      {"phaseNo": st.get("phaseNo")})
+                log.log(f"        🏆 阶段 {st.get('phaseNo')}（{st.get('threshold')}）奖励：{r}")
+        await self._ypost("/tokenpk/toplist/progress/autoReceiveLotteryChance")
+        ch = await self._yget("/tokenpk/toplist/progress/queryRemainChance")
+        try:
+            c = int((ch or {}).get("result") or 0)
+        except (TypeError, ValueError):
+            c = 0
+        for _ in range(c):
+            r = await self._ypost("/tokenpk/toplist/progress/lottery")
+            log.log(f"        🎟️ TokenPK 抽奖：{(r or {}).get('result')}")
+            await asyncio.sleep(1.2)
+
+    async def mcloud_day(self):
+        """云盘日：盲盒（开在线时抽）+ 礼品（有库存才领）"""
+        info = await self._yget("/mcloudday/common/activityInfo", {"marketName": "mCloudDay"})
+        res = (info or {}).get("result") or {}
+        if not res:
+            log.log("    📦 云盘日：接口不可用 ⏭️")
+            return
+        log.log("    📦 云盘日：主活动 %s｜盲盒 %s｜额外礼 %s｜邀请 %s"
+                % (res.get("online"), res.get("blindboxOnline"), res.get("extGiftOnline"),
+                   res.get("inviteOnline")))
+        if res.get("blindboxOnline"):
+            li = await self._yget("/mcloudday/blindbox/lotteryInfo")
+            lres = (li or {}).get("result") or {}
+            try:
+                n = int(lres.get("lotteryCount") or 0)
+            except (TypeError, ValueError):
+                n = 0
+            for _ in range(min(n, 5)):
+                r = await self._ypost("/mcloudday/blindbox/lottery")
+                log.log(f"        🎁 盲盒：{(r or {}).get('result')}")
+                await asyncio.sleep(1.2)
+            if lres.get("hasAnySurprisePrizeStock"):
+                r = await self._ypost("/mcloudday/blindbox/receiveSurprisePrize")
+                log.log(f"        🎁 惊喜礼：{(r or {}).get('result')}")
+        gl = await self._yget("/mcloudday/gift/list")
+        gre = (gl or {}).get("result") or {}
+        prizes = (gre.get("nationalPrizeList") or []) + (gre.get("provPrizeList") or [])
+        stock = [p for p in prizes if p.get("hasStock") and not p.get("receiveFlag")]
+        if not stock:
+            log.log(f"    📦 云盘日礼品：{len(prizes)} 项均无库存/已领 ⏭️")
+        for p in stock:
+            r = await self._ypost("/mcloudday/gift/receive", {"prizeId": p.get("prizeId")})
+            log.log(f"        🎁 礼品「{p.get('prizeName')}」：{r}")
+
+    async def email_sms(self):
+        """邮箱/短信联合活动：状态查询 + 奖励尝试（资格受限时返回 604）"""
+        ti = await self._yget("/openemailsms-service/openEmailsms/getTaskInfo")
+        res = (ti or {}).get("result") or {}
+        if res:
+            log.log("    📧 邮箱短信：任务一 %s｜任务二 %s"
+                    % ((res.get("taskOneInfo") or {}).get("taskStatus"),
+                       (res.get("taskTwoInfo") or {}).get("taskStatus")))
+        r = await self._yget("/openemailsms-service/openEmailsms/reward")
+        if r and r.get("code") == 0:
+            log.log(f"    📧 邮箱短信奖励：{r.get('result')}")
+        else:
+            log.log(f"    📧 邮箱短信奖励：{(r or {}).get('msg')} ⏭️")
+
+    async def activity_patrol(self):
+        """活动巡检：逐个活动查状态，仅在有可领项时动作"""
+        pats = (("签到翻倍", self.sign_double), ("直播间小红花", self.live_room_flower),
+                ("新春礼开福袋", self.spring_gift), ("TokenPK", self.token_pk),
+                ("云盘日", self.mcloud_day), ("邮箱短信", self.email_sms))
+        for name, fn in pats:
+            try:
+                await fn()
+            except Exception as e:
+                log.log(f"    ❌ {name} 异常：{e}")
+            await asyncio.sleep(random.uniform(0.5, 1.2))
+
+    # ── 兑换提示（滑块无法脚本化）───────────────────────────────────────
+    async def exchange_hint(self):
+        if not is_redeem:
+            return
+        r = await self._yget("/signin/page/exchangeList", {"client": "app"})
+        if not (r and r.get("code") == 0):
+            log.log(f"  ⚠️ 兑换列表不可用：{r}")
+            return
+        items = []
+        for _, group in (r.get("result") or {}).items():
+            for it in group or []:
+                if it.get("onLine") == 1:
+                    items.append("%s（%s 豆，今日余 %s）" % (it.get("prizeName"), it.get("POrder"),
+                                                         it.get("dailyRemainderCount")))
+        log.log("  🎁 可兑换：%s" % ("；".join(items) or "无"))
+        log.log("  ⚠️ 兑换接口需过滑块验证（puzzleOffset），脚本无法完成，请在 App/H5 手动兑换")
+
+    # ── 主流程 ──────────────────────────────────────────────────────────
+    async def run(self):
+        log.log(f"========== 用户【{self.show_account}】 ==========")
+        if not await self.login():
+            log.log("  ❌ 登录失败，跳过该账号")
+            return
+        begin = await self._balance()
+        await self.query_status()
+        log.log("──────── 签到 ────────")
+        await self.sign_in()
+        log.log("──────── 记录豆领取（签到/任务记录）────────")
+        await self.claim_records()
+        log.log("──────── 任务 ────────")
+        await self.task_list()
+        # 522 缺口检查
+        r = await self._ypost("/signin/task/taskListV3",
+                              {"marketname": MARKET_NAME, "client": 1, "clientVersion": CLIENT_VERSION})
+        for t in ((r or {}).get("result") or []):
+            if t.get("id") == 522 and t.get("state") != "FINISH":
+                await self.upload_fill_522(100 - int(t.get("process") or 0))
+        log.log("──────── 抽奖（老接口）────────")
+        await self.draw()
+        log.log("──────── 连续备份奖励 ────────")
+        await self.backup_cloud()
+        log.log("──────── 通知任务 ────────")
+        await self.notice_task()
+        await self.wx_sign()
+        log.log("──────── 活动巡检 ────────")
+        await self.activity_patrol()
+        log.log("──────── 兑换提示 ────────")
+        await self.exchange_hint()
+        end = await self._balance()
+        if begin is not None and end is not None:
+            log.log(f"──────── 结束：AI豆 {begin} → {end}（+{end - begin}）────────")
+        else:
+            log.log(f"──────── 结束时 AI豆余额：{end} ────────")
+        log.log("")
+
+
+async def main():
+    cookies = get_env("ydyp_ck", "@")
+    if not cookies:
+        log.log("❌ 未配置环境变量 ydyp_ck")
+        return
+    for ck in cookies:
+        worker = MobileCloudDisk(ck)
+        try:
+            await worker.run()
+        finally:
+            await worker.client.aclose()
+    send_notification_message_collection(f"中国移动云盘签到通知 - {datetime.now().strftime('%Y/%m/%d')}")
+
+
+async def check():
+    """只读自检：不签到、不抽奖、不领豆"""
+    cookies = get_env("ydyp_ck", "@")
+    if not cookies:
+        log.log("❌ 未配置环境变量 ydyp_ck")
+        return
+    for ck in cookies:
+        w = MobileCloudDisk(ck)
+        try:
+            log.log(f"========== 自检【{w.show_account}】 ==========")
+            if not await w.login():
+                log.log("  ❌ 凭据无效：请重新抓包更新 ydyp_ck")
+                continue
+            await w.query_status()
+            items = w.info.get("receiveList") or []
+            log.log(f"  🫘 待领取明细 {len(items)} 笔：")
+            for it in items:
+                log.log("      cloudType=%s %s 豆%s" % (it.get("cloudType"), it.get("cloudNum"),
+                                                       f" acceptDate={it.get('acceptDate')}" if it.get("acceptDate") else
+                                                       f" recordId={it.get('recordId')}" if it.get("recordId") else ""))
+            r = await w._ypost("/signin/task/taskListV3",
+                               {"marketname": MARKET_NAME, "client": 1, "clientVersion": CLIENT_VERSION})
+            tasks = (r or {}).get("result") or []
+            log.log(f"  🗂️ 任务 {len(tasks)} 条：")
+            for t in tasks:
+                log.log("      [%-10s] id=%-4s %-7s step=%-2s proc=%-4s %s" % (
+                    t.get("groupid"), t.get("id"), t.get("state"), t.get("currstep"),
+                    t.get("process"), (t.get("name") or "").strip()[:24]))
+            d = await w._mget("/market/playoffic/drawInfo")
+            log.log(f"  🎰 抽奖额度：{d.get('result') if d else d}")
+            b = await w._mget("/market/backupgift/info")
+            log.log(f"  ☁️ 备份奖励：{b.get('result') if b else b}")
+            p = await w._mget("/market/msgPushOn/task/status")
+            log.log(f"  🔔 通知任务：{p.get('result') if p else p}")
+            log.log("  🧭 活动状态（只读）：")
+            for name, path, params in (("直播间", "/liveRoomFeedback/user/info", None),
+                                       ("新春礼抽奖次数", "/simple/springgift/getLotteryCount", None),
+                                       ("TokenPK", "/tokenpk/toplist/progress/queryHome", None),
+                                       ("云盘日", "/mcloudday/common/activityInfo", {"marketName": "mCloudDay"}),
+                                       ("邮箱短信", "/openemailsms-service/openEmailsms/getTaskInfo", None)):
+                rr = await w._yget(path, params)
+                log.log("      %-14s code=%s %s" % (name, (rr or {}).get("code"),
+                                                    json.dumps((rr or {}).get("result"), ensure_ascii=False)[:120]))
+            log.log("  ✅ 自检完成（未做任何写操作）\n")
+        finally:
+            await w.client.aclose()
+
+
+if __name__ == "__main__":
+    if "--check" in sys.argv:
+        asyncio.run(check())
+    else:
+        asyncio.run(main())
