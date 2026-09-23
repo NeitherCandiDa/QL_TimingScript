@@ -1,0 +1,13 @@
+.env
+__pycache__/sendNotify.cpython-313.pyc
+__pycache__/fn_print.cpython-313.pyc
+__pycache__/get_env.cpython-313.pyc
+__pycache__/KDconfig.cpython-313.pyc
+.idea/git_toolbox_prj.xml
+.idea/MarsCodeWorkspaceAppSettings.xml
+.idea/QL_TimingScript.iml
+.idea/vcs.xml
+.idea/QL_TimingScript.iml
+dw_creds.json
+*.bak_*
+*.pyc
