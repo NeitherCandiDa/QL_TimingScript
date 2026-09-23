@@ -1,12 +1,12 @@
 # -*- coding=UTF-8 -*-
 # @Project          QL_TimingScript
-# @fileName         中国移动云盘-新版.py
+# @fileName         中国移动云盘.py
 # @author           Echo
 # @EditTime         2026/9/23
 # cron: 0 0 8 * * *
 # const $ = new Env('中国移动云盘');
 """
-中国移动云盘（云朵中心 / 云盘专属 AI豆）签到脚本 —— 2026-09 接口版本（v3）
+中国移动云盘（云朵中心 / 云盘专属 AI豆）签到脚本
 
 ─────────────────────────── 环境变量 ───────────────────────────
   ydyp_ck           必需   账号凭据，多账号用 @ 分隔
@@ -172,7 +172,7 @@ class MobileCloudDisk:
     
     def _dev_h(self, extra: dict = None) -> dict:
         """真机同款设备头：isDeviceId 让网关校验「体/参数里的 deviceId」。
-        未配 ydyp_device_token 时保持原样（这些接口会回 614，属已知行为）。"""
+        未配 ydyp_device_token 时保持原样"""
         h = self._h(extra)
         if DEVICE_TOKEN:
             h.pop("deviceId", None)  # App 不在头部带设备号，设备号走请求体 / URL 参数
@@ -227,7 +227,6 @@ class MobileCloudDisk:
         r = await self._yget("/signin/page/getCloudNum", {"client": "app"})
         return (r or {}).get("result") if r and r.get("code") == 0 else None
     
-    # ── 登录链路（实测：querySpecTokenV2 → /ycloud/auth-service/auth/tyrzLogin）────
     async def _jwt_alive(self) -> bool:
         """探一下当前 jwtToken 是否仍然可用（只读接口，无副作用）"""
         r = await self._yget("/signin/page/infoV3", {"client": "app"})
@@ -285,7 +284,6 @@ class MobileCloudDisk:
         log.log(f"  ❌ 换取 jwtToken 失败：{r}")
         return False
     
-    # ── 状态查询 ────────────────────────────────────────────────────────
     async def query_status(self):
         """签到状态（infoV3）+ 豆余额 + 待领明细"""
         r = await self._yget("/signin/page/infoV3", {"client": "app"})
@@ -305,7 +303,6 @@ class MobileCloudDisk:
         log.log(f"  ⚠️ 查询签到状态失败：{r}")
         return None
     
-    # ── 签到 ────────────────────────────────────────────────────────────
     async def sign_in(self):
         """点击即签到（接口幂等：今日已签仍返回 todaySignIn=true）"""
         r = await self._yget("/signin/page/startSignIn", {"client": "app"}, dev=True)
@@ -320,7 +317,6 @@ class MobileCloudDisk:
         else:
             log.log(f"  ❌ 签到失败：{r}")
     
-    # ── 签到翻倍（每月一次）──────────────────────────────────────────────
     async def sign_double(self):
         r = await self._yget("/signin/page/multiple", {"client": "app"})
         if r and r.get("code") == 0:
@@ -331,7 +327,6 @@ class MobileCloudDisk:
         else:
             log.log(f"  ✖️2️⃣ 签到翻倍：{r}")
     
-    # ── 记录豆领取（receiveV3 / receiveTaskExpansion）────────────────────
     async def claim_records(self):
         """
         infoV3.receiveList 三类：
@@ -398,7 +393,6 @@ class MobileCloudDisk:
             log.log(f"  🫘 暂未领到：{pending} 豆（服务端锁定，稍后/下次运行重试）")
         return total
     
-    # ── 任务 ────────────────────────────────────────────────────────────
     async def task_list(self):
         body = {"marketname": MARKET_NAME, "client": 1, "clientVersion": CLIENT_VERSION}
         r = await self._ypost("/signin/task/taskListV3", body)
@@ -419,7 +413,6 @@ class MobileCloudDisk:
                 clicked += 1
             else:
                 skipped += 1
-        # 领奖轮：全部任务都试一次（接口幂等，未完成返回 result:0；FINISH 的补领不再漏）
         gained = 0
         for t in tasks:
             tid, name = t.get("id"), (t.get("name") or "").strip()
@@ -440,7 +433,6 @@ class MobileCloudDisk:
             return int(r["result"])
         return 0
     
-    # ── 抽奖 / 备份 / 通知（老接口，实测存活）────────────────────────────
     async def draw(self):
         info = await self._mget("/market/playoffic/drawInfo")
         if not (info and info.get("code") == 0):
@@ -518,7 +510,6 @@ class MobileCloudDisk:
         else:
             log.log(f"  📝 公众号签到：{r}")
     
-    # ── 上传文件（任务 106 手动上传 / 522 当月上传满100个）───────────────
     async def upload_file(self, count=1):
         """OSE 三步上传：getUploadUrl → PUT 原始字节 → file/complete。
         实测：传 1 个即把任务 106 推到 FINISH；但**不计入 522**（见 说明 5）。"""
@@ -584,7 +575,6 @@ class MobileCloudDisk:
         log.log(f"      📤 522 补足上传 {need} 个文件（注意：实测该通道不计入 522）…")
         await self.upload_file(count=min(need, 100))
     
-    # ── 活动巡检（云朵中心之外的独立领豆/领奖入口）───────────────────────
     async def live_room_flower(self):
         """直播间小红花：首次参与直接赠花（实测领到 10 朵）"""
         info = await self._yget("/liveRoomFeedback/user/info")
@@ -717,7 +707,6 @@ class MobileCloudDisk:
                 log.log(f"    ❌ {name} 异常：{e}")
             await asyncio.sleep(random.uniform(0.5, 1.2))
     
-    # ── 主流程 ──────────────────────────────────────────────────────────
     async def run(self):
         log.log(f"========== 用户【{self.show_account}】 ==========")
         log.log(f"  📱 设备号 {self.device_id}｜UA {UA if len(UA) <= 72 else UA[:72] + '…'}"
