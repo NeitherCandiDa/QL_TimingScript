@@ -1,9 +1,9 @@
 # -*- coding=UTF-8 -*-
 # const $ = new Env('得物森林')
-# cron "1 8,10,12,15,18,22 * * *"
+# cron: "0 8,12,18,22 * * *"
 """
 ================================================================================
- 得物「星愿森林」自动脚本  —— 配置说明（先读完再运行）
+ 得物「星愿森林」自动脚本  —— 配置说明
 ================================================================================
 
 【需要配置的 7 项凭据】（全部来自你自己手机抓包，切勿共用/分享）
@@ -13,81 +13,28 @@
   cookie       : 约 995 字符（整条 Cookie 原样复制）
   dudeliveryid : 约 160 字符
   duproductid  : 约 64 字符
-  sk           : 约 92 字符  ★必需：设备签名
+  sk           : 约 92 字符  ★必需：设备签名，缺了 POST 接口要过验证码
 
 【怎么获取】
   手机装抓包工具（Reqable / 小黄鸟等）→ 打开得物 App → 进入"星愿森林"→ 随便点几下
   → 找到任意一条 dcdn-app-huoshan.dewu.com/hacking-tree/... 的请求
   → 把请求头里上面 7 项原样复制出来
 
-【怎么填】两种方式任选其一
-  方式1（青龙面板 / 系统环境变量，推荐）：
-      变量名              含义
-      dw_x_auth_token     Bearer xxxx...     （多账号用 & 分割）
-      dw_duToken          xxxx...
-      dw_cookieToken      xxxx...
-      dw_cookie           duToken=xxx; x-auth-token=xxx...
-      dw_dudeliveryid     xxxx...
-      dw_duproductid      xxxx...
-      dw_sk               xxxx...            （★必需！设备签名，见下方说明）
-  方式2（本地测试）：把值填进同目录的 dw_creds.json（已生成模板），脚本自动读取
+【怎么填】填到环境变量（青龙面板「环境变量」或同目录 .env），多账号用 & 分割
+      DW_X_AUTH_TOKEN     Bearer xxxx...
+      DW_DU_TOKEN         xxxx...
+      DW_COOKIE_TOKEN     xxxx...
+      DW_COOKIE           duToken=xxx; x-auth-token=xxx...
+      DW_DUDELIVERYID     xxxx...
+      DW_DUPRODUCTID      xxxx...
+      DW_SK               xxxx...            （★必需）
 
-  - 遇到 485「请校验验证码」= 服务端风控（非限流）：
-      个别任务会被要求人机验证，属正常风控，脚本自动跳过该任务继续跑
-  - 部分任务连续快速请求也会触发 485，脚本内已加大请求间隔
-
-【已知问题】
-  1、浇水充满气泡 存在bug —— 2026-09-22 已修（死循环，见下方重构记录）
-  2、领取品牌特惠活动奖励存在bug
-  3、获取助力码存在bug
-
-【2026-09-22 新增功能】
-  - 收藏商品任务（taskType=50，「收藏想要的【品牌】商品」，每个 40g）
-    三步流程（从 H5 JS 逆向得出）：
-      ① POST /api/v1/h5/favorite/fire/app/favorite/add/spu/v2   {spuId}
-      ② POST /hacking-task/v1/task/commit   {taskId,taskType,spuId,btd,kocSource}
-      ③ POST /hacking-tree/v1/task/receive  {classify,taskId}
-    实现：favorite_spu() + do_favorite_task()，execute_task 按 taskType==50 分发
-    注意：会真的把商品收藏到你的得物账号（任务要求如此），可事后在 App 取消收藏
-
-【2026-09-22 第三轮：新增免费领水滴 + 接口可行性结论】
-  + 新增 receive_free_droplet()：水滴福利每日免费领 droplet_benefit/receive_droplet
-    实测 +50g/天（即App「水滴兑换」页的免费领水滴），已挂 run()。
-  接口可行性结论（实测，非推测）：
-  - 逛逛品牌页(taskType=500,GPS_AD广告任务)：脚本 pre_commit→commit(str)→receive 链已通，
-    但 commit 不推进 curStep（广告任务需真实SDK曝光），能否领取取决于服务端是否判定完成。
-  - 首次添加星愿森林小组件(reward=6000)：需真机在手机桌面添加widget，无法脚本自动化。
-  - 下滑赚水滴 product/task/seek-receive：sign 是【独立签名】(错误码709000007)，
-    非主 _dw_sign 算法，旧硬编码值已失效，需真实浏览行为动态生成→静态不可复现，无法自动化。
-  - 打卡得好礼 task/sign/choose_time：需【先完成7天连续签到】才解锁(711020005)，
-    且选时段有副作用(影响真实签到节奏)，不自动化；老签到 sign/list 由 sign_in() 每日推进。
-
-【2026-09-22 关键修复 + 新功能（第二轮）】
-  ★ 修复所有浏览/逛逛/去摇一摇类任务：task/commit 的 taskType 必须传【字符串】
-    传 int 会返回 code=900「请求参数不合法」，传 str 才 200 成功。
-    已在 submit_task_completion_status 内部统一强制 str(taskType)，一次修好全部分支。
-    （实测：浏览15s +50g、去摇一摇 +50g、从桌面组件 +500g、逛逛品牌页 +40g 全部领到）
-  ★ submit 失败不再静默返回 False，会打印服务端真实响应（便于定位）
-  + 新增周末活动 execute_weekend_task()：每日 login 计入 50g（周末结算发放）
-    机制：taskStatus 10=待领 20=已计入 0=进行中；pk/order/waterEx 需真实交易无法自动化
-  + 新增收藏商品任务 do_favorite_task()：favorite/add/spu → task/commit → task/receive（每个40g）
-
-【2026-09-22 重构与健壮性加固】
-  - 域名常量 _DW_API_HOST：41 处 URL 收敛，换域名只改 1 行
-  - 统一日志 self.log()：97 处调用，自动加「用户【昵称】，=== ===」前后缀
-  - 节流配置区 _SLEEP_* / _MAX_*_LOOP：全局控速只改这一处
-  - 安全取值 dig()：45 处链式 .get().get() 改为 dig()，服务端返回 null 不再崩溃
-  - 修死循环：receive_discover_droplet 原 while True 完全无出口（会无限狂发请求）
-  - 修死循环：waterting_droplet_extra 非 200 时不退出（原「浇水充满气泡 bug」根因）
-
-【2026-09-22 修复记录】
-  - 修复 400：去掉 sks/shumreiId/duid/deviceTrait 等头（保留 SK）
-  - 修复 485：加回 SK 设备签名（POST 接口必需，否则要求验证码）
-  - 修复刷屏：气泡水滴「明日可领」不再无限循环
-  - 修复死循环：接口非 200 时正确 return（原会空转 50 轮）
-  - 修复限流：并发改串行、请求间隔加大（0.2s→2.5s）
-  - 新增签名：内置 sign 自动计算（md5(排序参数+salt)），无需手动处理
-  - 域名迁移：app.dewu.com → dcdn-app-huoshan.dewu.com（Host 头不变）
+【可选：设备标记】模拟真机环境增强防风控，值同样抓包获取
+      DW_SHUMEI_ID        数美设备指纹（62 字符）
+      DW_DEVICE_MODEL     设备型号，如 PJZ110
+      DW_DUID             设备 ID（64 字符）
+      ※ DW_SKS 慎填：与 SK 不配套时服务端返回 400「校验失败:11001」
+  注：traceparent 由脚本每次请求随机生成，无需配置
 ================================================================================
 """
 import asyncio
@@ -98,17 +45,13 @@ from datetime import datetime
 
 import httpx
 from urllib.parse import urlparse, parse_qs
-import log  # 项目统一日志模块：打印+收集+视觉分级
+import log
 from get_env import get_env
 from sendNotify import send_notification_message_collection
-# ============ 星愿森林接口签名（2026-09-22 逆向求得）============
-# 规则: sign = md5( 按key排序拼接的 "key+value" + SALT )
-# 参与参数: URL query 参数 + POST body(JSON) 参数，合并后按 key 排序
-# 依据: http-config.json 的 apiEncrypt 清单 + dewu_record.txt 还原的 L 函数
 import hashlib as _hashlib
+import secrets
 
-# ============ 接口域名（2026-09 迁移到 CDN；换域名只改这一行）============
-# 说明：星愿森林接口实际走 CDN 域名，Host 头仍是 app.dewu.com（见 headers）
+
 _DW_API_HOST = "https://dcdn-app-huoshan.dewu.com"
 
 _DW_SIGN_SALT = "048a9c4943398714b356a696503d2d36"
@@ -118,7 +61,6 @@ def _dw_sign(params):
     """计算接口 sign"""
     kv = "".join(str(k) + str(params[k]) for k in sorted(params.keys())) if params else ""
     return _hashlib.md5((kv + _DW_SIGN_SALT).encode("utf-8")).hexdigest()
-
 
 
 def dig(obj, *keys, default=None):
@@ -138,6 +80,7 @@ def dig(obj, *keys, default=None):
         else:
             return default
     return default if cur is None else cur
+
 
 class _SignClient:
     """包装 httpx.AsyncClient：自动附加 sign 参数（GET 用 query，POST 合并 body）"""
@@ -162,44 +105,32 @@ class _SignClient:
         return getattr(self._c, name)
 
 
-# ---------- 凭据加载（环境变量优先 → 同目录 dw_creds.json 兜底）----------
-import os as _os, json as _json
-
 _CRED_FIELDS = {
-    "x_auth_token": "dw_x_auth_token",
-    "duToken": "dw_duToken",
-    "cookieToken": "dw_cookieToken",
-    "cookie": "dw_cookie",
-    "dudeliveryid": "dw_dudeliveryid",
-    "duproductid": "dw_duproductid",
-    "sk": "dw_sk",
+    "x_auth_token": "DW_X_AUTH_TOKEN",
+    "duToken": "DW_DU_TOKEN",
+    "cookieToken": "DW_COOKIE_TOKEN",
+    "cookie": "DW_COOKIE",
+    "dudeliveryid": "DW_DUDELIVERYID",
+    "duproductid": "DW_DUPRODUCTID",
+    "sk": "DW_SK",
+    "shumeiId": "DW_SHUMEI_ID",
+    "device_model": "DW_DEVICE_MODEL",
+    "sks": "DW_SKS",
+    "duid": "DW_DUID",
 }
 
 
-def _split_multi(v):
-    return [x.strip() for x in str(v).split("&") if x.strip()] if v else []
+def _gen_traceparent():
+    """生成 W3C traceparent（真机每次请求随机生成，模拟真机环境防风控）"""
+    return "00-{}-{}-01".format(
+        secrets.token_hex(16), secrets.token_hex(8))
 
 
 def _load_creds():
-    """返回 {字段: [各账号的值]}，环境变量优先，其次 dw_creds.json"""
+    """返回 {字段: [各账号的值]}。凭据全部来自环境变量/.env（青龙标准做法）。"""
     out = {k: [] for k in _CRED_FIELDS}
-    # 1) 环境变量
     for field, env in _CRED_FIELDS.items():
-        vals = _split_multi(_os.environ.get(env, ""))
-        if vals:
-            out[field] = vals
-    if out["x_auth_token"]:
-        return out
-    # 2) dw_creds.json（本地调试）
-    try:
-        p = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "dw_creds.json")
-        if _os.path.exists(p):
-            data = _json.load(open(p, encoding="utf-8"))
-            for acc in data.get("accounts", []):
-                for field in _CRED_FIELDS:
-                    out[field].append(str(acc.get(field, "") or ""))
-    except Exception as e:
-        print(f"[凭据] 读取 dw_creds.json 失败: {e}")
+        out[field] = get_env(env, "&")
     return out
 
 
@@ -211,14 +142,24 @@ dw_Cookies = _CREDS["cookie"]
 dw_dudeliveryids = _CREDS["dudeliveryid"]
 dw_duproductids = _CREDS["duproductid"]
 dw_sks = _CREDS["sk"]
+dw_shumeiIds = _CREDS["shumeiId"]
+dw_device_models = _CREDS["device_model"]
+dw_skss = _CREDS["sks"]
+dw_duids = _CREDS["duid"]
 
 if not dw_x_auth_tokens:
-    print("=" * 70)
-    print("[配置缺失] 未找到任何凭据！请按文件顶部说明配置：")
-    print("  方式1：设置环境变量 dw_x_auth_token / dw_duToken / dw_cookieToken /")
-    print("         dw_cookie / dw_dudeliveryid / dw_duproductid")
-    print("  方式2：填写同目录 dw_creds.json 的 accounts 数组")
-    print("=" * 70)
+    log.log("=" * 70)
+    log.log("[配置缺失] 未找到凭据！请在青龙面板/环境变量(.env)中配置：")
+    log.log("  DW_X_AUTH_TOKEN   Bearer xxxx...   （多账号用 & 分割）")
+    log.log("  DW_DU_TOKEN       xxxx...")
+    log.log("  DW_COOKIE_TOKEN   xxxx...")
+    log.log("  DW_COOKIE         duToken=xxx; x-auth-token=xxx...")
+    log.log("  DW_DUDELIVERYID   xxxx...")
+    log.log("  DW_DUPRODUCTID    xxxx...")
+    log.log("  DW_SK             xxxx...          （★必需，POST 接口风控签名）")
+    log.log("  以下设备标记可选（模拟真机防风控，多账号 & 分割）：")
+    log.log("  DW_SHUMEI_ID  DW_DEVICE_MODEL  DW_SKS  DW_DUID")
+    log.log("=" * 70)
 share_code_list = []
 HELP_SIGNAL = True  # 是否助力
 
@@ -235,23 +176,26 @@ class DeWu:
     WATERTING_G: int = 40  # 每次浇水克数
     REMAINING_G: int = 1800  # 最后浇水剩余不超过的克数
     
-    def __init__(self, x_auth_token, index, sk, duToken="", cookieToken="", cookie="",
-                 dudeliveryid="", duproductid="", waterting_g=WATERTING_G, remaining_g=REMAINING_G):
+    def __init__(self, x_auth_token, index, sk, duToken="", cookieToken="", traceparent="",
+                 cookie="", dudeliveryid="", duproductid="", shumeiId="", device_model="",
+                 sks="", duid="",
+                 waterting_g=WATERTING_G, remaining_g=REMAINING_G):
         self.client = httpx.AsyncClient(verify=False, timeout=60)
-        self.client = _SignClient(self.client)  # [签名] 自动附加 sign (2026-09-22)
+        self.client = _SignClient(self.client)
         self._duToken = duToken
         self._cookieToken = cookieToken
+        self._traceparent = traceparent
         self._cookie = cookie
         self._dudeliveryid = dudeliveryid
         self._duproductid = duproductid
-        self._sk = sk  # [风控] 设备签名，POST 类接口(领任务奖励)必需，缺失会触发 485 验证码
+        self._sk = sk
+        self._shumeiId = shumeiId
+        self._device_model = device_model
+        self._sks = sks
+        self._duid = duid
         self.index = index
         self.waterting_g = waterting_g
         self.remaining_g = remaining_g
-        # self.headers = {'appVersion': "5.55.0",
-        #                 'User-Agent': "Mozilla/5.0 (Linux; Android 15; PJZ110 Build/AP3A.240617.008; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/129.0.6668.70 Mobile Safari/537.36/duapp/5.55.0(android;15)",
-        #                 'x-auth-token': x_auth_token,
-        #                 'uuid': '0000000000000000',
         self.headers = {
             'Host': "app.dewu.com",
             'User-Agent': "Mozilla/5.0 (Linux; U; Android 16; zh-CN; PJZ110 Build/BP2A.250605.015) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/100.0.4896.58 UWS/5.18.12.0 Mobile Safari/537.36/duapp/6.1.0(android;16)",
@@ -259,27 +203,20 @@ class DeWu:
             'Accept-Encoding': "gzip",
             'ua': "duapp/6.1.0(android;16)",
             'appid': "h5",
-            'SK': self._sk,  # [风控] 必需：设备签名(SZStone)，POST类接口(领奖)缺它会485验证码；sks/shumreiId/duid 不可同时带(会400)
-            # 'shumeiId': "<已移除：如需使用请自行抓包填写>",  # [已禁用] 风控头→400校验失败(11001) 2026-09-22
-            # 'deviceTrait': "<已移除：如需使用请自行抓包填写>",  # [已禁用] 风控头→400校验失败(11001) 2026-09-22
+            'SK': self._sk,
             'x-auth-token': x_auth_token,  # 改用构造参数(全局变量已变列表)
             'networktype': "wifi",
-            # 'device_model': "<已移除：如需使用请自行抓包填写>",  # [已禁用] 风控头→400校验失败(11001) 2026-09-22
             'channel': "opp",
             'duToken': self._duToken,
             'appVersion': "6.1.0",
             'emu': "0",
             'countryCode': "CN",
             'cookieToken': self._cookieToken,
-            # 注: 下面 a / traceparent 是抓包时的静态值（实测不影响功能）；
-            #     如追求完全模拟真机，可自行抓包替换，二者非账号凭据、无需共用
-            'traceparent': "00-f5dafcc46ab239d1085c8423b64bcee7-14469d84e4cbebc6-01",
+            'traceparent': _gen_traceparent(),
             'dudeliveryid': self._dudeliveryid,
             'duproductid': self._duproductid,
             'isRoot': "0",
-            # 'sks': "<已移除：如需使用请自行抓包填写>",  # [已禁用] 风控头→400校验失败(11001) 2026-09-22
             'imei': "",
-            # 'duid': "<已移除：如需使用请自行抓包填写>",  # [已禁用] 风控头→400校验失败(11001) 2026-09-22
             'platform': "h5",
             'a': "D9BEC67287063A252394A15D3B572BF35A56964FA63EA870",
             'isProxy': "0",
@@ -292,10 +229,15 @@ class DeWu:
             'Accept-Language': "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
             'Cookie': self._cookie
         }
+        # 设备标记（模拟真机环境，防风控）：有值才带，避免空值异常
+        for _k, _v in (("shumeiId", self._shumeiId), ("device_model", self._device_model),
+                       ("sks", self._sks), ("duid", self._duid)):
+            if _v:
+                self.headers[_k] = _v
         self.user_name = None
         self.tree_id = 0  # 树的id
-        self._log_stats = {"ok": 0, "skip": 0, "warn": 0, "err": 0, "info": 0}  # 日志分级计数 (2026-09-23)
-        self._gained = 0  # 本次真实到账水滴合计g (2026-09-23)
+        self._log_stats = {"ok": 0, "skip": 0, "warn": 0, "err": 0, "info": 0}
+        self._gained = 0
         self.tasks_completed_number = 0  # 任务完成数
         self.cumulative_task_list = []  # 累计计任务列表
         self.tasks_dict_list = []  # 任务字典列表
@@ -1559,14 +1501,20 @@ async def main():
     task = []
     _n = len(dw_x_auth_tokens)
     for index in range(_n):
+        def _pick(lst, i):
+            return lst[i] if i < len(lst) else ""
+
         dw = DeWu(
-            dw_x_auth_tokens[index], index,
-            dw_sks[index] if index < len(dw_sks) else "",
-            duToken=dw_duTokens[index] if index < len(dw_duTokens) else "",
-            cookieToken=dw_cookieTokens[index] if index < len(dw_cookieTokens) else "",
-            cookie=dw_Cookies[index] if index < len(dw_Cookies) else "",
-            dudeliveryid=dw_dudeliveryids[index] if index < len(dw_dudeliveryids) else "",
-            duproductid=dw_duproductids[index] if index < len(dw_duproductids) else "",
+            dw_x_auth_tokens[index], index, _pick(dw_sks, index),
+            duToken=_pick(dw_duTokens, index),
+            cookieToken=_pick(dw_cookieTokens, index),
+            cookie=_pick(dw_Cookies, index),
+            dudeliveryid=_pick(dw_dudeliveryids, index),
+            duproductid=_pick(dw_duproductids, index),
+            shumeiId=_pick(dw_shumeiIds, index),
+            device_model=_pick(dw_device_models, index),
+            sks=_pick(dw_skss, index),
+            duid=_pick(dw_duids, index),
         )
         task.append(dw.run())
     await asyncio.gather(*task)
