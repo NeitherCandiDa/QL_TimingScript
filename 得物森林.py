@@ -33,9 +33,9 @@
       DW_SHUMEI_ID        数美设备指纹（62 字符）
       DW_DEVICE_MODEL     设备型号，如 PJZ110
       DW_DUID             设备 ID（64 字符）
-      ※ DW_SKS 请勿启用：sks 属于得物的「请求加密」机制，与 a 头、data 密文参数三者配套；
-        只发 sks 头而发明文参数，服务端必然返回 400「校验失败:11001」（已穷举实测）
   注：traceparent 由脚本每次请求随机生成，无需配置
+  注：抓包里的 sks 不要配。它属于请求加密机制（与 a 头、data 密文参数配套），
+      单独发送服务端必然返回 400「校验失败:11001」，脚本已不再读取 DW_SKS
 ================================================================================
 """
 import asyncio
@@ -116,7 +116,6 @@ _CRED_FIELDS = {
     "sk": "DW_SK",
     "shumeiId": "DW_SHUMEI_ID",
     "device_model": "DW_DEVICE_MODEL",
-    "sks": "DW_SKS",
     "duid": "DW_DUID",
 }
 
@@ -144,7 +143,6 @@ dw_duproductids = _CREDS["duproductid"]
 dw_sks = _CREDS["sk"]
 dw_shumeiIds = _CREDS["shumeiId"]
 dw_device_models = _CREDS["device_model"]
-dw_skss = _CREDS["sks"]
 dw_duids = _CREDS["duid"]
 
 if not dw_x_auth_tokens:
@@ -158,7 +156,7 @@ if not dw_x_auth_tokens:
     log.log("  DW_DUPRODUCTID    xxxx...")
     log.log("  DW_SK             xxxx...          （★必需，POST 接口风控签名）")
     log.log("  以下设备标记可选（模拟真机防风控，多账号 & 分割）：")
-    log.log("  DW_SHUMEI_ID  DW_DEVICE_MODEL  DW_SKS  DW_DUID")
+    log.log("  DW_SHUMEI_ID  DW_DEVICE_MODEL  DW_DUID")
     log.log("=" * 70)
 share_code_list = []
 HELP_SIGNAL = True  # 是否助力
@@ -178,7 +176,7 @@ class DeWu:
     
     def __init__(self, x_auth_token, index, sk, duToken="", cookieToken="", traceparent="",
                  cookie="", dudeliveryid="", duproductid="", shumeiId="", device_model="",
-                 sks="", duid="",
+                 duid="",
                  waterting_g=WATERTING_G, remaining_g=REMAINING_G):
         self.client = httpx.AsyncClient(verify=False, timeout=60)
         self.client = _SignClient(self.client)
@@ -191,7 +189,6 @@ class DeWu:
         self._sk = sk
         self._shumeiId = shumeiId
         self._device_model = device_model
-        self._sks = sks
         self._duid = duid
         self.index = index
         self.waterting_g = waterting_g
@@ -231,7 +228,7 @@ class DeWu:
         }
         # 设备标记（模拟真机环境，防风控）：有值才带，避免空值异常
         for _k, _v in (("shumeiId", self._shumeiId), ("device_model", self._device_model),
-                       ("sks", self._sks), ("duid", self._duid)):
+                       ("duid", self._duid)):
             if _v:
                 self.headers[_k] = _v
         self.user_name = None
@@ -1501,7 +1498,6 @@ async def main():
             duproductid=_pick(dw_duproductids, index),
             shumeiId=_pick(dw_shumeiIds, index),
             device_model=_pick(dw_device_models, index),
-            sks=_pick(dw_skss, index),
             duid=_pick(dw_duids, index),
         )
         task.append(dw.run())
