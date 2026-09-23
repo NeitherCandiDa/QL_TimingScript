@@ -8,9 +8,41 @@
 """
 中国移动云盘（云朵中心 / 云盘专属 AI豆）签到脚本 —— 2026-09 接口版本（v3）
 
-环境变量：ydyp_ck，格式  <authorization>#<手机号>#<可选 jwtToken>#<可选 设备号>
-多个账号用 @ 分割，例如：
-  ydyp_ck=Basic xxxxxxxx#13800000000
+─────────────────────────── 环境变量 ───────────────────────────
+  ydyp_ck           必需   账号凭据，多账号用 @ 分隔
+  ydyp_ua           可选   自定义 User-Agent；建议填写（模拟自己手机，见下方风控建议）
+  ydyp_device_id    可选   全局默认设备号（UUID）；ydyp_ck 第 4 段可单独覆盖它
+  ydyp_upload_fill  可选   是否补足「当月上传满 100 个」，默认 0（该通道实测无效，见说明 7）
+
+  ydyp_ck 格式（# 分隔，后两段可省）：
+      <authorization>#<手机号>#<jwtToken>#<deviceId>
+  例：ydyp_ck=Basic bW9iaWxl....xxx#13800000000
+  多账号：ydyp_ck=账号1@账号2@账号3
+
+──────────────────── 这些值怎么拿到（手机抓一次包就够）────────────────────
+  抓包工具：手机装 Reqable（推荐）或 Stream；也可用本仓库附带的 PC 抓取工具
+            「移动云盘抓authorization.zip」（解压后右键管理员运行，自动抓出 authorization）。
+
+  authorization   抓「中国移动云盘」App 的任意一条请求，看请求头里的 authorization
+                  （形如 Basic bW9iaWxl...，是一整串）；云朵中心 H5（浏览器打开
+                  m.mcloud.139.com/portal/newsignin/ 并登录）的请求头里也有同一个值。
+                  ⚠ 它内嵌 13 位过期时间戳，有效期约 30 天；接口返回「05050006 暂无权限！」
+                  就是过期了，重新抓一次替换即可。
+  手机号          登录用的移动手机号（用于脱敏展示 + 派生默认设备号，脚本不会外传）。
+  jwtToken        （可省）抓 tyrzLogin 响应里的 result.token（形如 eyJhbGci....xx.yy）。
+                  填了会先用它、失效自动回退到 authorization 重换；不填每轮现换也行。
+  deviceId        （可省）抓 tyrzLogin 请求体里的 deviceId（UUID 形式）。
+                  不填则由脚本按账号派生：每个账号稳定、各人互不相同，无需手填。
+  ydyp_ua         （可省但强烈建议）在抓包里复制任意请求的完整 User-Agent 整串填进来。
+                  不填就用内置的一加 13（PJZ110）/ Android 15 / MCloudApp 13.2.2 ——
+                  多人共用同一串等于「同一台设备」，容易连带限流，所以请各填各的。
+
+──────────────────────────── 风控建议 ────────────────────────────
+  · 一账号一设备指纹：ydyp_ua 各填各的；deviceId 默认值已按账号派生，各人天然不同。
+  · 不要把 ck 借给别人用（同一 ck 多 IP 登录本身就会触发风控）；也不要多机同跑一个账号。
+  · 脚本自带请求间隔节流，不必再加 sleep，也不要缩短。异常时宁可少领，别硬刚重试。
+  · 结果里出现 614/615「活动太火爆啦」= 服务端锁定（不是脚本参数问题），脚本会退避，
+    过一段时间或次日重试即可。
 
 覆盖的领豆入口（均以 App/H5 接口面为准，非老脚本硬编码）：
   A. 云朵中心 sign_in_3
@@ -24,10 +56,12 @@
      —— 每个活动先查状态，只在「可领/有库存/有次数」时才动作，无库存/已领/已结束自动跳过。
 
 说明：
-  1) authorization 从 App 抓包获得（形如 "Basic bW9iaWxl..."），是换取 ssoToken 的凭据。
-     凭据内嵌 13 位过期时间戳，过期后接口返回 05050006「暂无权限！」，需重新抓取。
-  2) 第 1 段或第 3 段也可直接填 jwtToken（形如 eyJhbGci....xx.yy），脚本识别后直接使用。
-  3) deviceId 部分接口强制要求，缺省时脚本用账号派生的固定值，实测可通过。
+  1) 凭据三种形态脚本都认：Basic authorization（推荐）/ ssoToken / 裸 jwtToken（eyJhbGci....xx.yy）。
+     直填 jwtToken 时脚本先探活再使用，失效会自动回退到 authorization 重换，不会一路空跑。
+  2) deviceId 部分接口强制要求。优先级：ydyp_ck 第 4 段 > ydyp_device_id > 按账号派生
+     （UUID 形式，一个账号固定一个、不同账号互不相同），一般不需要手填。
+  3) 依赖：httpx、python-dotenv；同目录需 log.py / get_env.py / sendNotify.py（本仓库自带，
+     一起下载即可）。pip 装依赖：pip install httpx python-dotenv
   4) 云朵已改名 AI豆（2026-07-31，1:1）；接口前缀 /ycloud/，老 market 接口部分仍在服役。
   5) 兑换接口带滑块验证（getSlidePuzzle + puzzleOffset），脚本无法完成，请手动兑换。
   6) AI豆需手动领取，跨周未领会失效，建议每日至少执行一次。
@@ -57,8 +91,12 @@ from get_env import get_env
 from sendNotify import send_notification_message_collection
 
 # ── 常量 ────────────────────────────────────────────────────────────────
-UA = ("Mozilla/5.0 (Linux; Android 15; PJZ110 Build/AP3A.240617.008; wv) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Version/4.0 Chrome/130.0.6723.58 Mobile Safari/537.36 MCloudApp/13.2.2")
+# 设备指纹：默认内置一加 13（PJZ110）/ Android 15 / 云盘 App 13.2.2 的 UA。
+# 多人共用同一串 = 服务端视角「同一台设备」，对外发布请使用者用 ydyp_ua 覆盖成自己机型。
+_UA_DEFAULT = ("Mozilla/5.0 (Linux; Android 15; PJZ110 Build/AP3A.240617.008; wv) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Version/4.0 Chrome/130.0.6723.58 Mobile Safari/537.36 MCloudApp/13.2.2")
+UA = (os.environ.get("ydyp_ua") or "").strip() or _UA_DEFAULT
+DEVICE_ID_ENV = (os.environ.get("ydyp_device_id") or "").strip()     # 全局默认设备号（被 ydyp_ck 第 4 段覆盖）
 
 H5 = "https://m.mcloud.139.com"                     # 新接口平台（与云朵中心 H5 同源）
 YCLOUD = H5 + "/ycloud"
@@ -94,8 +132,10 @@ class MobileCloudDisk:
         self.authorization = fields[0].strip() if fields else ""
         self.account = fields[1].strip() if len(fields) > 1 else ""
         self.token = fields[2].strip() if len(fields) > 2 else ""
+        # 设备号优先级：ydyp_ck 第 4 段 > ydyp_device_id > 按账号派生（UUID 形式，稳定且各账号互不相同）
         self.device_id = (fields[3].strip() if len(fields) > 3 and fields[3].strip()
-                          else "mcloud" + _md5(self.account)[:24])
+                          else DEVICE_ID_ENV
+                          or str(uuid.uuid5(uuid.NAMESPACE_DNS, "ydyp:" + (self.account or "unknown"))))
         self.show_account = ((self.account[:3] + "****" + self.account[-4:])
                              if len(self.account) >= 11 else self.account)
         self.jwt = ""
@@ -154,6 +194,11 @@ class MobileCloudDisk:
         return (r or {}).get("result") if r and r.get("code") == 0 else None
 
     # ── 登录链路（实测：querySpecTokenV2 → /ycloud/auth-service/auth/tyrzLogin）────
+    async def _jwt_alive(self) -> bool:
+        """探一下当前 jwtToken 是否仍然可用（只读接口，无副作用）"""
+        r = await self._yget("/signin/page/infoV3", {"client": "app"})
+        return bool(r and r.get("code") == 0 and r.get("result"))
+
     async def login(self) -> bool:
         if self.jwt:
             return True
@@ -161,8 +206,14 @@ class MobileCloudDisk:
         for cand, label in ((self.authorization, "第1段"), (self.token, "第3段")):
             if cand.count(".") == 2 and len(cand) > 80:
                 self.jwt = cand
-                log.log(f"  🔑 使用{label}直填的 jwtToken（{self.show_account}）")
-                return True
+                if await self._jwt_alive():
+                    log.log(f"  🔑 使用{label}直填的 jwtToken（{self.show_account}）")
+                    return True
+                self.jwt = ""
+                log.log(f"  ⚠️ {label}填的 jwtToken 已失效")
+                if label == "第1段":                     # 第 1 段是 jwt 时没有可回退的凭据
+                    log.log("  ❌ 请重新抓包替换 ydyp_ck（第 1 段应填 Basic authorization）")
+                    return False
 
         sso = await self._query_sso_token()
         if sso and await self._tyrz_login(sso):
@@ -657,6 +708,7 @@ class MobileCloudDisk:
     # ── 主流程 ──────────────────────────────────────────────────────────
     async def run(self):
         log.log(f"========== 用户【{self.show_account}】 ==========")
+        log.log(f"  📱 设备号 {self.device_id}｜UA {'自定义' if UA != _UA_DEFAULT else '内置默认'}")
         if not await self.login():
             log.log("  ❌ 登录失败，跳过该账号")
             return
@@ -717,6 +769,8 @@ async def check():
         w = MobileCloudDisk(ck)
         try:
             log.log(f"========== 自检【{w.show_account}】 ==========")
+            log.log("  📱 设备号：%s｜UA：%s" % (w.device_id,
+                     "自定义（ydyp_ua）" if UA != _UA_DEFAULT else "内置默认 · 建议用 ydyp_ua 换成自己的机型"))
             if not await w.login():
                 log.log("  ❌ 凭据无效：请重新抓包更新 ydyp_ck")
                 continue
