@@ -685,14 +685,18 @@ class HaoYouKuaiBao:
         if not pending:
             return
 
+        pend_txt = "、".join(f"{t.get('title') or t['gameid']}({t['gameid']})" for t in pending)
         yuyue: Optional[WebYuyue] = getattr(self, "yuyue", None)
         if yuyue is None or not yuyue.available:
             log.log(f"⚠️预约任务跳过：{getattr(yuyue, 'reason', '未初始化')}"
+                    f"；待预约 {len(pending)} 个：{pend_txt}"
                     "（需在环境变量 HYKB_WEB_COOKIE 配置网页登录态，获取方式见 hykb_config.WEB_YUYUE）")
             return
         if not yuyue.login_ok():
-            log.log(f"⚠️预约任务跳过：网页登录态已失效（{yuyue.reason}）—— 本机运行 "
-                    "python hykb_web_login.py 用快爆 App 扫码重新登录，把输出的 cookie 填回 HYKB_WEB_COOKIE")
+            log.log(f"⚠️预约任务跳过：网页登录态已失效（{yuyue.reason}）"
+                    f"；待预约 {len(pending)} 个：{pend_txt}"
+                    " —— 本机运行 python hykb_web_login.py 用快爆 App 扫码重新登录，"
+                    "把输出的 cookie 串填回 HYKB_WEB_COOKIE")
             return
 
         pending = pending[: int(yuyue.cfg["max_per_run"])]
