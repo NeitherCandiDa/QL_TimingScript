@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 __pycache__/sendNotify.cpython-313.pyc
 __pycache__/fn_print.cpython-313.pyc
 __pycache__/get_env.cpython-313.pyc
@@ -11,3 +13,6 @@ _bak_*/
 
 # 内部逆向/分析资料，仅本地保留
 docs/
+
+# 含真实凭据的本地抓包脚本/导出，不入库
+reqable-code.py
