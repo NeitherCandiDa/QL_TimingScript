@@ -21,8 +21,11 @@
 5. 页面令牌有效期 23 小时（MAX_PAGE_STAY_MS），过期需重新打开页面取新令牌
 6. 每日答题（mode=2）：题目与正确答案都不在客户端，答错消耗当日次数（2001=次数已用完），
    因此脚本只在 hykb_dati_bank.json 命中时作答，未命中只记录、绝不猜答案
-7. 预约类任务（mode=9）：预约动作只能由 App 端发起（H5 走 activityInterface.checkSubscript 桥），
-   脚本仅在 dailyInit 的 user_yuyue_gameids 含该游戏时才调 DailyYuyueLing
+7. 预约类任务（mode=9）：App 侧预约接口是加密私有接口（params_encryption=1 的 native AES 体
+   + svid/SECRET-DEVICE 设备头 + native 签名 t），活动凭据直连必被 token error 拒绝；H5 活动域
+   只有查询/领奖能力。脚本改走网页版正规接口：POST www.3839.com/app/hykb_web/ajax_yuyue.php
+   action=orderNoPhone（无手机号预约），登录态用 Pauth/Uauth cookie（快爆 App 扫码登录一次，约 1 年），
+   预约结果以 dailyInit.user_yuyue_gameids 复核（已实测生效；详见 WEB_YUYUE 与 WebYuyue）
 8. 好友互动（mode=7）：需好友家存在待帮收玉米（iafInit.eventUids.uids），不足 3 个即跳过
 9. 赛季等级奖励：批量接口 batchReceiveLevelPrize 已被服务端禁用（1001 不支持批量操作），
    改为 seasonManualInit 取 user_prize_data → 逐个 receiveLevelPrize(prize_id, level)，
@@ -109,6 +112,34 @@ THROTTLE = {
     "small_game_wait": 330,     # 小游戏任务需游玩 5 分钟，脚本等待秒数
 }
 
+# ─────────────── 网页版预约（纯接口，无设备依赖；青龙可直接定时跑）───────────────
+# 为什么用网页版：预约动作在 App 侧是加密私有接口（params_encryption=1 的 native AES 体
+# + svid/SECRET-DEVICE 设备头 + native 签名 t），活动凭据直连必被 token error 拒绝；
+# H5 活动域也没有预约能力（153 个 ac 里只有查询/领奖）。
+# 而 www.3839.com 游戏详情页的「立即预约 → 无手机号预约」是正规前端接口，纯 HTTP：
+#
+#   POST {site}/app/hykb_web/ajax_yuyue.php   (form-urlencoded)
+#     action=checkStatus   → {"key":"ok","yuyued":false}      查询预约状态
+#     action=checkLogin    → {"key":"ok","msg":"登录校验通过"} 强登录校验
+#     action=orderNoPhone  → {"key":"ok","msg":"预约成功"}     无手机号预约（gid + game_type）
+#
+# 登录态：Pauth / Uauth / accesstoken / nickname 四个 cookie —— 用快爆 App 扫码登录
+# www.3839.com 一次即可（QRcodeCreate → App 扫一扫确认 → QRcodeAuthCallBack 下发 cookie），
+# 实测有效期约 1 年。放进环境变量 HYKB_WEB_COOKIE（多账号用 @ 分隔，与 cookie 顺序对应）；
+# 本地调试也可把 cookie 字符串写进同目录 hykb_web_cookie.txt。
+# 真伪判据：预约后玉米庄园 dailyInit 的 user_yuyue_gameids 会包含该 gameid（已实测）。
+WEB_YUYUE = {
+    "enabled": True,
+    "site": "https://www.3839.com",
+    "endpoint": "/app/hykb_web/ajax_yuyue.php",
+    "game_type": "0",            # 页面 _focus_info_type（0=手游详情页）
+    "relation_steam_id": "",     # 页面 _relation_steam_id，Steam 关联游戏才需要
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+    "env_names": ("HYKB_WEB_COOKIE", "Hykb_web_cookie", "hykb_web_cookie"),
+    "cookie_file": "hykb_web_cookie.txt",
+    "max_per_run": 8,            # 单次运行最多预约几个游戏（正常一天 0-2 个）
+}
+
 # ─────────────────────────── 任务开关 ───────────────────────────
 # 只做「接口层能真实完成」的任务；需真人操作（下载安装、云游戏、逛帖子）的不碰
 TASK_SWITCHES = {
@@ -117,7 +148,8 @@ TASK_SWITCHES = {
     "daily_share": True,         # mode=1  分享类（分享福利 / 分享资讯）
     "daily_dati": True,          # mode=2  每日答题（仅本地题库命中时作答，见 hykb_dati_bank.json）
     "daily_interactive": True,   # mode=7  好友互动（需好友家有待帮收玉米，没有则跳过）
-    "daily_yuyue": True,         # mode=9  预约领奖（仅在 App 内已预约该游戏时才领）
+    "daily_yuyue": True,         # mode=9  预约领奖（已预约的游戏自动领奖）
+    "daily_yuyue_auto": True,    # mode=9  预约全自动：走网页版正规接口预约（见 WEB_YUYUE）
     "daily_small_game": False,   # mode=15/20 快爆小游戏（需真实游玩 5 分钟，默认关）
     "season": True,              # 赛季等级奖励（线上已禁用批量接口，改为逐个等级领取）
     "ycx": True,                 # 一次性任务（分享 / 答题类）

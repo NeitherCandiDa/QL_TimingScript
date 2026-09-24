@@ -16,3 +16,6 @@ docs/
 
 # 含真实凭据的本地抓包脚本/导出，不入库
 reqable-code.py
+
+# 好游快爆网页版预约登录态（本机兜底文件，含账号凭据）
+hykb_web_cookie.txt

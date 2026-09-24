@@ -14,6 +14,8 @@
 #     HYKB_SMDEVICEID             数美设备号（领取类接口必带；多账号用 @ 分隔，与 cookie 顺序对应）
 #     HYKB_DEVICE                 设备识别码，默认取 cookie 第 5 段
 #     HYKB_UA                     抓包原样 UA（含 Androidkb/<机型>，服务端会校验机型）
+#     HYKB_WEB_COOKIE             网页登录态（Pauth/Uauth/accesstoken/nickname），预约任务专用；
+#                                 多账号用 @ 分隔、与 cookie 顺序对应。获取方式见 hykb_config.WEB_YUYUE
 """
 旧脚本为什么会失效（本次重写的依据）：
     旧脚本只带 scookie + device 就发请求，而活动后来给所有 ajax 接口加了 token 校验链：
@@ -25,6 +27,7 @@
 import argparse
 import hashlib
 import json
+import os
 import random
 import re
 import time
@@ -54,6 +57,7 @@ from hykb_config import (
     TASK_SWITCHES,
     THROTTLE,
     VERSION_CODE,
+    WEB_YUYUE,
 )
 from sendNotify import send_notification_message_collection
 
@@ -129,11 +133,117 @@ def remember_dati_question(title: str, options: List[str]) -> None:
         log.log(f"⚠️答题库写入失败：{e}")
 
 
+def load_web_cookie() -> str:
+    """网页登录态：优先环境变量（青龙），其次脚本同目录的本地文件（本地调试）"""
+    for name in WEB_YUYUE["env_names"]:
+        try:
+            vals = [v for v in get_env(name, "@") if v]
+        except Exception:
+            vals = []
+        if vals:
+            return vals[0].strip().strip("'\"")
+    path = Path(__file__).with_name(WEB_YUYUE["cookie_file"])
+    if path.exists():
+        return path.read_text(encoding="utf-8", errors="ignore").strip().strip("'\"")
+    return ""
+
+
+class WebYuyue:
+    """网页版预约：走 www.3839.com 游戏详情页「立即预约 → 无手机号预约」的正规前端接口
+
+    为什么不走 App：预约动作在 App 侧是 api.3839app.com/kuaibao/android/api.php?a=add&c=gameappointment，
+    报文 params_encryption=1（libne.so 里的 native AES）+ svid/SECRET-DEVICE 设备头 + native 签名 t，
+    活动凭据直连只会拿到 token error；H5 活动域也没有预约能力（153 个 ac 里只有查询/领奖）。
+    而网页版有官方预约入口，纯 HTTP（cookie 登录态），不依赖任何设备 —— 这正是青龙要的形态。
+
+    接口（POST，form-urlencoded）：
+        POST {site}/app/hykb_web/ajax_yuyue.php
+            action=checkStatus   → {"key":"ok","yuyued":false}     查询预约状态
+            action=checkLogin    → {"key":"ok","msg":"登录校验通过"} 强登录校验
+            action=orderNoPhone  → {"key":"ok","msg":"预约成功"}     无手机号预约（gid + game_type）
+    登录态：Pauth / Uauth / accesstoken / nickname 四个 cookie，快爆 App 扫码登录一次有效期约 1 年
+    （登录页 → 扫码 → App 确认 → QRcodeAuthCallBack 下发 cookie）。
+    """
+
+    def __init__(self, cookie: str = "", cfg: Optional[Dict[str, Any]] = None):
+        self.cfg: Dict[str, Any] = dict(WEB_YUYUE)
+        if cfg:
+            self.cfg.update(cfg)
+        self.cookie = (cookie or "").strip().strip("'\"").strip()
+        self.reason = "" if self.cookie else "未配置网页登录态（HYKB_WEB_COOKIE）"
+        self.client = requests.Session()
+        self.client.verify = False
+        self.client.headers.update({
+            "User-Agent": self.cfg["ua"],
+            "Referer": self.cfg["site"] + "/",
+            "Origin": self.cfg["site"],
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+        })
+        if self.cookie:
+            self.client.headers["Cookie"] = self.cookie
+
+    @property
+    def available(self) -> bool:
+        return bool(self.cookie)
+
+    def _post(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """带节流+重试的 POST（沿用 THROTTLE，保持人类节奏）"""
+        url = self.cfg["site"] + self.cfg["endpoint"]
+        for attempt in range(THROTTLE["max_retry"] + 1):
+            time.sleep(random.uniform(THROTTLE["min_interval"], THROTTLE["max_interval"]))
+            try:
+                resp = self.client.post(url, data=data, timeout=API_CONFIG["timeout"])
+                payload = resp.json()
+            except Exception as e:
+                if attempt >= THROTTLE["max_retry"]:
+                    log.log(f"   ⚠️网页预约请求失败：{e}")
+                    return None
+                time.sleep(2 + attempt * 2)
+                continue
+            if isinstance(payload, dict):
+                return payload
+            return None
+        return None
+
+    def login_ok(self) -> bool:
+        """强登录校验：预约弹窗的前置条件，失败即登录态过期"""
+        data = self._post({"action": "checkLogin", "gid": "", "game_type": self.cfg["game_type"]})
+        if data and data.get("key") == "ok":
+            return True
+        self.reason = (data or {}).get("msg") or "网页登录态失效"
+        return False
+
+    def is_reserved(self, gameid: str) -> Optional[bool]:
+        """查询该游戏是否已预约；None 表示查询失败"""
+        data = self._post({"action": "checkStatus", "gid": str(gameid), "game_type": self.cfg["game_type"]})
+        if not data or data.get("key") != "ok":
+            return None
+        return bool(data.get("yuyued"))
+
+    def reserve(self, gameid: str) -> bool:
+        """无手机号预约（幂等：已预约再调也只返回成功）；真伪仍由玉米庄园 dailyInit 复核"""
+        data = self._post({
+            "action": "orderNoPhone",
+            "gid": str(gameid),
+            "game_type": self.cfg["game_type"],
+            "relation_steam_id": self.cfg["relation_steam_id"],
+        })
+        if not data:
+            return False
+        if data.get("key") == "ok":
+            log.log(f"   ✅网页预约成功：gameid={gameid}（{data.get('msg') or '预约成功'}）")
+            return True
+        log.log(f"   ❌网页预约失败：gameid={gameid} → {data.get('msg') or data}")
+        return False
+
+
 class HaoYouKuaiBao:
     """好游快爆玉米庄园任务执行器（单账号）"""
 
     def __init__(self, scookie: str, smdeviceid: str = "", device: str = "",
-                 ua: str = "", probe: bool = False):
+                 ua: str = "", probe: bool = False, web_cookie: str = ""):
         self.scookie = (scookie or "").strip().strip("'\"").strip()
         self.smdeviceid = (smdeviceid or "").strip().strip("'\"").strip()
         # cookie 约定：第 5 段即设备识别码（App 的 getUniqueDeviceIdNew 结果）
@@ -166,6 +276,9 @@ class HaoYouKuaiBao:
         # 每日任务上下文：dailyInit 下发的「已预约游戏」清单 / 本地答题库
         self.reserved_gameids: set = set()
         self.dati_bank: Dict[str, str] = load_dati_bank()
+
+        # 网页版预约客户端（预约任务用；登录态缺失时自动跳过，不影响其它任务）
+        self.yuyue = WebYuyue(web_cookie or load_web_cookie())
 
     # ───────────────────────── 基础层 ─────────────────────────
 
@@ -556,15 +669,67 @@ class HaoYouKuaiBao:
             time.sleep(random.uniform(*THROTTLE["task_gap"]))
         self._claim("DailyInteractiveLing", task["id"], label)
 
+    def yuyue_auto_reserve(self, tasks: List[Dict[str, Any]]) -> None:
+        """预约任务全自动：走网页版正规接口（无手机号预约），再用 dailyInit 复核（服务端状态为权威）
+
+        链路：dailyInit 给出「已预约游戏」清单 → 找出每日任务里未预约的预约类任务（mode=9）
+        → POST ajax_yuyue.php?action=orderNoPhone → 重新拉 dailyInit 确认生效 → 之后按 task_yuyue 领奖。
+        全程纯 HTTP，不依赖任何设备；登录态过期时只提示、不重试轰炸（避免风控）。
+        """
+        if not TASK_SWITCHES.get("daily_yuyue_auto", True):
+            return
+        pending = [t for t in tasks
+                   if t["mode"] == 9
+                   and str(t.get("gameid") or "0") not in ("", "0")
+                   and str(t["gameid"]) not in self.reserved_gameids]
+        if not pending:
+            return
+
+        yuyue: Optional[WebYuyue] = getattr(self, "yuyue", None)
+        if yuyue is None or not yuyue.available:
+            log.log(f"⚠️预约任务跳过：{getattr(yuyue, 'reason', '未初始化')}"
+                    "（需在环境变量 HYKB_WEB_COOKIE 配置网页登录态，获取方式见 hykb_config.WEB_YUYUE）")
+            return
+        if not yuyue.login_ok():
+            log.log(f"⚠️预约任务跳过：网页登录态已失效（{yuyue.reason}）—— 本机运行 "
+                    "python hykb_web_login.py 用快爆 App 扫码重新登录，把输出的 cookie 填回 HYKB_WEB_COOKIE")
+            return
+
+        pending = pending[: int(yuyue.cfg["max_per_run"])]
+        log.log(f"🌐预约全自动（网页版接口）：{len(pending)} 个游戏待预约")
+        for task in pending:
+            gid = str(task["gameid"])
+            log.log(f"   ➡️预约《{task['title'] or gid}》gameid={gid}")
+            state = yuyue.is_reserved(gid)
+            if state is True:
+                log.log("   ℹ️网页侧显示已预约，跳过下单")
+            else:
+                yuyue.reserve(gid)
+
+        # 复核：服务端 user_yuyue_gameids 才是权威判据
+        init = self.post("daily", {"ac": "dailyInit", "VersionCode": VERSION_CODE, "r": rand_param()},
+                         "预约结果复核")
+        if not init:
+            return
+        new_set = {str(g) for g in (init.get("user_yuyue_gameids") or []) if str(g)}
+        added = sorted(new_set - self.reserved_gameids)
+        if added:
+            log.log(f"✅预约生效 {len(added)} 个：{', '.join(added)}")
+        self.reserved_gameids = new_set
+        still = [str(t["gameid"]) for t in pending if str(t["gameid"]) not in new_set]
+        if still:
+            log.log(f"⚠️仍未预约成功：{', '.join(still)}"
+                    "（可能该游戏已停止预约 / 网页登录态权限不足，稍后重试即可）")
+
     def task_yuyue(self, task: Dict[str, Any]) -> None:
-        """预约类任务：预约动作只能由 App 端口发起（H5 走 activityInterface.checkSubscript 桥），
-        脚本只在「已预约」时领奖，避免无效失败请求。"""
+        """预约类任务：预约动作已由上一步的网页版接口完成（WebYuyue），
+        这里只对「服务端确认已预约」的游戏领奖，避免无效失败请求。"""
         label = f"预约任务[{task['id']}]"
         gameid = str(task.get("gameid") or "")
         if gameid and gameid in self.reserved_gameids:
             self._claim("DailyYuyueLing", task["id"], label)
         else:
-            log.log(f"⏭️{label}未预约（gameid={gameid or '?'}）：需在 App 内手动预约该游戏后才能领奖")
+            log.log(f"⏭️{label}未预约（gameid={gameid or '?'}）：请在 App 内预约该游戏后才能领奖")
             self.stats["skip"] += 1
 
     def daily(self) -> None:
@@ -582,6 +747,9 @@ class HaoYouKuaiBao:
         if not tasks:
             log.log("⚠️页面未解析到每日任务条目，跳过每日任务")
             return
+
+        # 预约任务全自动：走网页版正规接口（无手机号预约）→ 纯 HTTP，无设备依赖
+        self.yuyue_auto_reserve(tasks)
 
         todo: List[Dict[str, Any]] = []
         for task in tasks:
@@ -712,6 +880,7 @@ def load_accounts() -> List[Dict[str, str]]:
         log.log("❌未找到 Hykb_cookie / HYKB_COOKIE 变量")
         return []
     smids = [s for s in get_env("HYKB_SMDEVICEID", "@") if s]
+    web_cookies = [w for w in get_env("HYKB_WEB_COOKIE", "@") if w]
     devices = [d for d in get_env("HYKB_DEVICE", "@") if d]
     uas = [u for u in get_env("HYKB_UA", "@") if u]
 
@@ -725,6 +894,7 @@ def load_accounts() -> List[Dict[str, str]]:
         "smdeviceid": pick(smids, i),
         "device": pick(devices, i),
         "ua": pick(uas, i),
+        "web_cookie": pick(web_cookies, i),
     } for i, cookie in enumerate(cookies)]
 
 
@@ -746,6 +916,7 @@ def main() -> None:
             device=account["device"],
             ua=account["ua"],
             probe=args.probe,
+            web_cookie=account["web_cookie"],
         )
         bot.run()
 
