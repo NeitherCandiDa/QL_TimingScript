@@ -19,3 +19,6 @@ reqable-code.py
 
 # 好游快爆网页版预约登录态（本机兜底文件，含账号凭据）
 hykb_web_cookie.txt
+
+# 好游快爆每日答题题库（脚本运行时自动生成/更新，非配套数据）
+hykb_dati_bank.json

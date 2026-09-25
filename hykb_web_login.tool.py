@@ -1,7 +1,15 @@
 # -*- coding=UTF-8 -*-
 # @Project      QL_TimingScript
-# @fileName     hykb_web_login.py
+# @fileName     hykb_web_login.tool.py
 # @desc         好游快爆「网页版预约」登录态获取工具（本地运行，扫码登录一次有效期约 1 年）
+#
+# ⚠️⚠️ 这是【本机一次性手动工具】，禁止加入青龙 / 任何定时调度 ⚠️⚠️
+#     · 它会在 127.0.0.1:8899 起一个 HTTP 服务并 serve_forever 常驻，
+#       被青龙当定时任务跑会永不退出、卡死执行队列。
+#     · 文件名特意用 “.tool.py” 结尾：青龙 ql repo 拉库的白名单一般写作
+#       “xxx\.py$” 或按业务前缀匹配，.tool.py 不会被自动登记为 task；
+#       即便手动添加，务必在拉库黑名单(blacklist)里排除 “.tool.py”。
+#     · 只在你自己的电脑上手动运行，跑完拿到 cookie 即可关闭。
 #
 # 用途：
 #     好游快爆.py 的预约任务（mode=9）走网页版正规接口
@@ -10,20 +18,18 @@
 #     本脚本负责拿到这四个 cookie —— 本机跑一次，用快爆 App「扫一扫」确认即可。
 #
 # 用法（在能打开浏览器的电脑上运行，手机和电脑需在同一网络或都能上公网）：
-#     python hykb_web_login.py
+#     python hykb_web_login.tool.py
 #     浏览器打开 http://127.0.0.1:8899/  → 用快爆 App 扫页面上的二维码 → 手机上点「确认登录」
 #     页面显示「登录成功」后，终端会打印一行可直接粘贴进环境变量 HYKB_WEB_COOKIE 的 cookie 串
 #
 # 说明：
 #     二维码失效会自动换新（页面每 4 秒自刷新），不用赶时间；
 #     登录态是账号级凭据，只在本机生成、只写到你自己的配置里，不要外传。
+import http.server
 import io
-import json
-import pathlib
 import socketserver
 import threading
 import time
-import http.server
 
 import qrcode
 import requests

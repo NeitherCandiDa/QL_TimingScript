@@ -2,32 +2,53 @@
 # @Project      QL_TimingScript
 # @fileName     好游快爆.py
 # @desc         好游快爆「翻滚吧爆米花」玉米庄园 H5 自动任务
-#               2026-09 协议重写版：补齐 page_token / token_sign 签名链、服务器时间校准、
-#               页面令牌过期重取、领奖接口 smdeviceid；全程串行 + 随机节流模拟真机操作
-#
-# 用法：
-#     python 好游快爆.py            # 正常执行任务
-#     python 好游快爆.py --probe    # 只登录并打印任务清单/资产，不执行任何任务（换凭据后先用它验证）
-#
-# 环境变量（键名大小写兼容）：
-#     Hykb_cookie / HYKB_COOKIE   活动 cookie（scookie），多账号用 @ 分隔
-#     HYKB_SMDEVICEID             数美设备号（领取类接口必带；多账号用 @ 分隔，与 cookie 顺序对应）
-#     HYKB_DEVICE                 设备识别码，默认取 cookie 第 5 段
-#     HYKB_UA                     抓包原样 UA（含 Androidkb/<机型>，服务端会校验机型）
-#     HYKB_WEB_COOKIE             网页登录态（Pauth/Uauth/accesstoken/nickname），预约任务专用；
-#                                 多账号用 @ 分隔、与 cookie 顺序对应。获取方式见 hykb_config.WEB_YUYUE
+# @author           Echo
+# @EditTime         2026/9/24
+# cron: 0 0 13 * * *
+# const $ = new Env('好游快爆');
+
 """
-旧脚本为什么会失效（本次重写的依据）：
-    旧脚本只带 scookie + device 就发请求，而活动后来给所有 ajax 接口加了 token 校验链：
-    page_token + token_time + random_str + token_sign(md5 前 10 位)，
-    且必须先 GET index.php 取服务端随机下发的 pageToken / pageRandomStr / 服务器时间。
-    缺这一层，服务端一律返回 loginStatus=103（no_login），与 cookie 本身是否有效无关。
+============ 一、要配哪些环境变量============
+多账号：每个变量都用 @ 分隔，且顺序与 HYKB_COOKIE 一一对应。
+
+  【必配】
+    HYKB_COOKIE       活动登录凭据（即请求里的 scookie）。缺它无法登录
+    HYKB_SMDEVICEID   数美设备号。缺它领取/签到类接口会被判风控（blacklist），领不到奖
+    HYKB_UA           抓包原样 User-Agent。服务端按 UA 里的机型做真机白名单校验；
+                      不配脚本直接拒绝运行（不内置默认 UA，避免统一 UA 冒充多台设备被判非真机）
+  【可选】
+    HYKB_DEVICE       设备识别码。留空时自动取 scookie 的第 5 段，一般无需单独配
+    HYKB_WEB_COOKIE   网页登录态，仅「预约任务(mode=9)」需要（获取方式见下方「四」）
+
+============ 二、怎么抓这些值（除 WEB_COOKIE 外都来自同一次抓包）============
+  准备：
+    1) 电脑装抓包工具（Reqable / Charles / Fiddler 任一），开启 HTTPS 解密
+    2) 手机连上该工具的代理，并安装信任它的 CA 证书
+    3) 打开好游快爆 App → 进入「翻滚吧爆米花」活动（玉米庄园）
+       → 手动点一次「浇水 / 签到」（这一步才会发出带 smdeviceid 的领取请求）
+  抓取：在抓包列表里按域名过滤  huodong3.3839.com ，打开活动下任意一个 POST 请求
+        （ajax_sign.php / ajax.php / ajax_daily.php 等）后——
+    · 请求体 Form 里的 scookie      → 整段复制，填 HYKB_COOKIE
+                                       形如 4|0|<uid>|<base64昵称>|<device>|…（竖线分隔）
+    · 请求体 Form 里的 smdeviceid   → 复制填 HYKB_SMDEVICEID（仅领取类请求带，故须先点签到）
+    · 请求体 Form 里的 device       → 只有要单独配 HYKB_DEVICE 时才取它（通常 = scookie 第 5 段）
+    · 请求头 Headers 里的 User-Agent → 整行原样复制，填 HYKB_UA
+                                       须含 Androidkb/<版本>(android;<机型>;…) 这一段
+  提示：scookie / smdeviceid 是「账号 + 设备」绑定的长期值，同一台手机抓一次即可长期复用；
+        失效的表现是脚本报 loginStatus=103 或 blacklist，届时重抓一次即可。
+
+============ 三、HYKB_WEB_COOKIE（预约任务专用，不用抓包）============
+  预约走网页版正规接口，需网页登录态（Pauth / Uauth / accesstoken / nickname 四个 cookie）。
+  在能开浏览器的电脑上运行：  python hykb_web_login.tool.py
+  浏览器打开 http://127.0.0.1:8899/ → 用快爆 App「扫一扫」→ 手机点「确认登录」，
+  终端随即打印一整行可直接粘贴到 HYKB_WEB_COOKIE 的 cookie 串（有效期约 1 年）。
+  不配不影响其它任务，仅预约任务会跳过。接口原理详见 hykb_config.WEB_YUYUE。
 """
+
 
 import argparse
 import hashlib
 import json
-import os
 import random
 import re
 import time
@@ -48,7 +69,6 @@ from hykb_config import (
     AUTO_MODES,
     BLACKLIST_LEVELS,
     CLIENT_VERSION,
-    DEFAULT_UA,
     ERROR_CODES,
     RESPONSE_MESSAGES,
     RISK_KWS,
@@ -57,6 +77,7 @@ from hykb_config import (
     TASK_SWITCHES,
     THROTTLE,
     VERSION_CODE,
+    WAIT_KWS,
     WEB_YUYUE,
 )
 from sendNotify import send_notification_message_collection
@@ -89,6 +110,11 @@ def risk_hit(text: str) -> bool:
 
 def is_skip(text: str) -> bool:
     return any(k in text for k in SKIP_KWS)
+
+
+def is_wait(text: str) -> bool:
+    """待条件（非故障）：预约领奖冷却等，服务端稍后/明日自然恢复"""
+    return any(k in text for k in WAIT_KWS)
 
 
 # ───────────────────────── 每日答题题库 ─────────────────────────
@@ -252,7 +278,7 @@ class HaoYouKuaiBao:
         self.probe = probe
 
         headers = dict(API_CONFIG["headers"])
-        headers["User-Agent"] = (ua or "").strip() or DEFAULT_UA
+        headers["User-Agent"] = (ua or "").strip()   # UA 为必设项，已在 load_accounts 校验非空
         self.client = requests.Session()
         self.client.headers.update(headers)
         self.client.verify = False
@@ -271,7 +297,7 @@ class HaoYouKuaiBao:
         self.user_name: str = ""
         self.user_level: int = 0
 
-        self.stats: Dict[str, Any] = {"ok": 0, "skip": 0, "fail": 0, "baomihua": 0}
+        self.stats: Dict[str, Any] = {"ok": 0, "skip": 0, "wait": 0, "fail": 0, "baomihua": 0}
 
         # 每日任务上下文：dailyInit 下发的「已预约游戏」清单 / 本地答题库
         self.reserved_gameids: set = set()
@@ -445,7 +471,13 @@ class HaoYouKuaiBao:
             bag = self.post("bag", {"ac": "BagInit", "r": rand_param()}, "背包")
             corn_id = self._pick_seed(bag)
             if corn_id is None:
-                log.log("⏭️没有可用种子，跳过播种（种子来自每日任务奖励）")
+                # 背包无库存种子时，退回登录 config 里的 next_seed_id（页面默认选中的种子）
+                try:
+                    corn_id = int(cfg.get("next_seed_id") or 0) or None
+                except (TypeError, ValueError):
+                    corn_id = None
+            if corn_id is None:
+                log.log("⏭️没有可用种子，跳过播种（种子来自每日任务奖励 / 爆米花商店兑换）")
                 self.stats["skip"] += 1
                 return
             msg = self.post("plant", {"ac": "Plant", "corn_id": corn_id, "r": rand_param()}, "播种")
@@ -459,15 +491,19 @@ class HaoYouKuaiBao:
 
     @staticmethod
     def _pick_seed(bag: Optional[Dict[str, Any]]) -> Optional[int]:
-        """从背包里挑一个还有剩余的种子 id"""
+        """从背包 cornDetails 里挑一个仍有库存（seed>0）的种子 id。
+        真实结构是 dict：{"1":{"corn_id":1,"seed":"5","corn":"0"}, ...}，
+        种子数量字段名为 seed（旧代码按 list + num/count 取，恒取不到 → 误判无种子）。"""
         if not isinstance(bag, dict):
             return None
-        for item in (bag.get("cornDetails") or bag.get("corn") or []):
+        details = bag.get("cornDetails")
+        items = details.values() if isinstance(details, dict) else (details or [])
+        for item in items:
             if not isinstance(item, dict):
                 continue
             try:
-                if int(item.get("num") or item.get("count") or 0) > 0:
-                    return int(item.get("id") or item.get("corn_id"))
+                if int(item.get("seed") or item.get("num") or item.get("count") or 0) > 0:
+                    return int(item.get("corn_id") or item.get("id"))
             except (TypeError, ValueError):
                 continue
         return None
@@ -496,7 +532,12 @@ class HaoYouKuaiBao:
                 parts.append(f"{name} +{value}")
         for key in ("baomihua", "dialog_baomihua"):
             if msg.get(key) is not None:
-                parts.append(f"余额 {msg[key]}")
+                try:
+                    bal = int(msg[key])
+                except (TypeError, ValueError):
+                    bal = 0
+                if bal > 0:                     # 分享类不发爆米花，服务端回 baomihua=0，别渲染成「余额 0」
+                    parts.append(f"余额 {bal}")
                 break
         return "，".join(parts) or "已到账"
 
@@ -538,6 +579,9 @@ class HaoYouKuaiBao:
             elif got and is_skip(str(got)):
                 log.log(f"⏭️赛季Lv{level}已领取过")
                 self.stats["skip"] += 1
+            elif got and is_wait(str(got)):
+                log.log(f"⚠️赛季Lv{level}待条件（稍后放行）：{str(got)[:120]}")
+                self.stats["wait"] += 1
             else:
                 log.log(f"⚠️赛季Lv{level}未领取：{str(got)[:140]}")
                 self.stats["fail"] += 1
@@ -564,6 +608,7 @@ class HaoYouKuaiBao:
                 "mode": mode,
                 "status": status,
                 "gameid": li.get("data-gameid") or "0",
+                "xyxtype": str(li.get("data-xyxtype") or ""),   # 小游戏类型：2=应用宝/微信(可接口领)，3=中控(需真机)
                 "title": (title_el.get_text(" ", strip=True) if title_el else "")[:60],
             })
         return tasks
@@ -597,6 +642,10 @@ class HaoYouKuaiBao:
             log.log(f"⏭️{label}今日已领取")
             self.stats["skip"] += 1
             return True
+        if is_wait(str(msg)):
+            log.log(f"⚠️{label}待条件（预约领奖有冷却，服务端稍后放行）：{str(msg)[:110]}")
+            self.stats["wait"] += 1
+            return False
         log.log(f"⚠️{label}未领取：{str(msg)[:150]}")
         self.stats["fail"] += 1
         return False
@@ -695,7 +744,7 @@ class HaoYouKuaiBao:
         if not yuyue.login_ok():
             log.log(f"⚠️预约任务跳过：网页登录态已失效（{yuyue.reason}）"
                     f"；待预约 {len(pending)} 个：{pend_txt}"
-                    " —— 本机运行 python hykb_web_login.py 用快爆 App 扫码重新登录，"
+                    " —— 本机运行 python hykb_web_login.tool.py 用快爆 App 扫码重新登录，"
                     "把输出的 cookie 串填回 HYKB_WEB_COOKIE")
             return
 
@@ -736,8 +785,132 @@ class HaoYouKuaiBao:
             log.log(f"⏭️{label}未预约（gameid={gameid or '?'}）：请在 App 内预约该游戏后才能领奖")
             self.stats["skip"] += 1
 
-    def daily(self) -> None:
-        """每日任务主流程"""
+    def smallgame_launch(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """快爆小游戏（mode=15/20）· 启动阶段（流水线）：一次性启动所有可接口领取的小游戏，
+        记录启动时刻并立即返回——不在此等待。300 秒试玩计时的等待窗口交给后续
+        签到/庄园/赛季/预约/分享等任务自然吸收，末尾再由 smallgame_claim 统一领奖。
+
+        实测服务端只校验「启动→领奖」的时间差（约 300 秒），不校验真机内真实游玩。
+        每个 id 在服务端各自独立计时，所以先全部启动最省时。
+        xyxtype=3（中控小游戏）领奖恒回 2002「请先体验游戏」= 需真机，接口领不了 → 排除。"""
+        games = [t for t in tasks if t["mode"] in (15, 20)]
+        if not games:
+            return []
+        doable = [t for t in games if t.get("xyxtype") != "3"]
+        skipped = [t for t in games if t.get("xyxtype") == "3"]
+        if skipped:
+            log.log(f"⏭️{len(skipped)} 个小游戏为中控类型（xyxtype=3，需真机内真实游玩），跳过："
+                    + "、".join(str(t["id"]) for t in skipped))
+        if not doable:
+            return []
+
+        log.log(f"🎮快爆小游戏：先启动 {len(doable)} 个（计时期间穿插其它任务，末尾统一领奖）")
+        started: List[Dict[str, Any]] = []
+        for task in doable:
+            r = self.post("daily", {"ac": "DailySmallGame", "id": task["id"], "r": rand_param()},
+                          f"小游戏启动[{task['id']}]")
+            if r and str(r.get("key")) in ("ok", "2001"):
+                started.append(task)
+            time.sleep(random.uniform(*THROTTLE["task_gap"]))
+        self._sg_launch_ts = time.time()
+        return started
+
+    def smallgame_claim(self, started: List[Dict[str, Any]]) -> None:
+        """快爆小游戏 · 领取阶段（流水线）：确保距启动已过 small_game_wait 秒
+        （其它任务多半已覆盖该等待，不足才补等），再逐个领奖。"""
+        if not started:
+            return
+        elapsed = time.time() - getattr(self, "_sg_launch_ts", 0.0)
+        remain = THROTTLE["small_game_wait"] - elapsed
+        if remain > 0:
+            log.log(f"⏳小游戏试玩计时还差 {int(remain)}s（其它任务已覆盖 {int(elapsed)}s），补等后领奖")
+            time.sleep(remain)
+        else:
+            log.log(f"🎮小游戏计时已满（其它任务已覆盖 {int(elapsed)}s 等待），开始领取 {len(started)} 个奖励")
+        for task in started:
+            self._claim_smallgame(task)
+            time.sleep(random.uniform(*THROTTLE["task_gap"]))
+
+    def download_launch(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """下载游玩任务（mode=3）· 启动阶段（流水线）：逐个 DailyGameDown（下载埋点）
+        + DailyGamePlay（记开始游玩），记录启动时刻立即返回——领奖窗口约 60s，
+        由后续常规任务的耗时吸收，末尾再由 download_claim 统一领奖。
+
+        实测服务端只校验「开始游玩→领奖」的时间差（约 60 秒），不校验真机是否真装了游戏。
+        7/7 下载任务均可接口领取（+2~66 爆米花不等），无需真机例外。"""
+        games = [t for t in tasks if t["mode"] == 3]
+        if not games:
+            return []
+        log.log(f"📥下载游玩：先启动 {len(games)} 个（记开始游玩，末尾统一领奖）")
+        started: List[Dict[str, Any]] = []
+        for task in games:
+            self.post("daily", {"ac": "DailyGameDown", "rwid": task["id"], "r": rand_param()},
+                      f"下载埋点[{task['id']}]")
+            r = self.post("daily", {"ac": "DailyGamePlay", "id": task["id"], "r": rand_param()},
+                          f"开始游玩[{task['id']}]")
+            if r and str(r.get("key")) in ("ok", "2001"):
+                started.append(task)
+            time.sleep(random.uniform(*THROTTLE["task_gap"]))
+        self._dl_launch_ts = time.time()
+        return started
+
+    def download_claim(self, started: List[Dict[str, Any]]) -> None:
+        """下载游玩 · 领取阶段（流水线）：确保距开始游玩已过 download_wait 秒
+        （常规任务多半已覆盖），再逐个领奖。"""
+        if not started:
+            return
+        elapsed = time.time() - getattr(self, "_dl_launch_ts", 0.0)
+        remain = THROTTLE["download_wait"] - elapsed
+        if remain > 0:
+            log.log(f"⏳下载任务试玩计时还差 {int(remain)}s（其它任务已覆盖 {int(elapsed)}s），补等后领奖")
+            time.sleep(remain)
+        else:
+            log.log(f"📥下载任务计时已满（其它任务已覆盖 {int(elapsed)}s），开始领取 {len(started)} 个奖励")
+        for task in started:
+            self._claim_delayed("DailyDownGameLing", task, "下载任务")
+            time.sleep(random.uniform(*THROTTLE["task_gap"]))
+
+    def _claim_delayed(self, action: str, task: Dict[str, Any], kind: str) -> None:
+        """领取「延时类」任务奖励（小游戏 / 下载游玩通用）：遇 2005 成熟度满先收获再重试（最多 3 次）。
+        2002=请先体验/试玩、2003=时间未到 → 记 skip（多为需真机或计时未足，非脚本故障）。"""
+        label = f"{kind}[{task['id']}]"
+        for _ in range(3):
+            msg = self.post("daily", {"ac": action, "id": task["id"], "VersionCode": VERSION_CODE,
+                                      "smdeviceid": self.smdeviceid, "verison": CLIENT_VERSION,
+                                      "r": rand_param()}, label)
+            if not msg:
+                return
+            key = str(msg.get("key"))
+            if key in MATURITY_CODES:
+                log.log(f"🌽{label}：玉米成熟度已满，先收获再领奖")
+                self.manor({"csd_jdt": "100%", "grew": "100"})
+                continue
+            if key == ERROR_CODES["SUCCESS"]:
+                log.log(f"✅{label}领取成功（{self._reward_text(msg)}）")
+                self._count_baomihua(msg)
+                self.stats["ok"] += 1
+            elif key == "2001" or is_skip(str(msg)):
+                log.log(f"⏭️{label}今日已领取")
+                self.stats["skip"] += 1
+            elif key in ("2002", "2003"):   # 请先体验/试玩时间未到（需真机或计时未足）
+                log.log(f"⏭️{label}需真机内真实游玩或计时未足（服务端回 {key}），跳过")
+                self.stats["skip"] += 1
+            elif is_wait(str(msg)):
+                log.log(f"⚠️{label}待条件：{str(msg)[:110]}")
+                self.stats["wait"] += 1
+            else:
+                log.log(f"⚠️{label}未领取：{str(msg)[:130]}")
+                self.stats["fail"] += 1
+            return
+
+    def _claim_smallgame(self, task: Dict[str, Any]) -> None:
+        """领取单个小游戏奖励（复用 _claim_delayed）"""
+        self._claim_delayed("DailySmallGameLing", task, "小游戏")
+
+    def daily(self, sg_started: Optional[List[Dict[str, Any]]] = None,
+              dl_started: Optional[List[Dict[str, Any]]] = None) -> None:
+        """每日任务主流程。sg_started/dl_started：run() 已在最前启动的小游戏/下载任务列表——
+        跑完常规任务后在此末尾统一领取，让计时被常规任务的耗时吸收。"""
         init = self.post("daily", {"ac": "dailyInit", "VersionCode": VERSION_CODE, "r": rand_param()},
                          "每日任务初始化")
         done_by_server: set = set()
@@ -750,6 +923,8 @@ class HaoYouKuaiBao:
         tasks = self.parse_page_tasks(self.page_html)
         if not tasks:
             log.log("⚠️页面未解析到每日任务条目，跳过每日任务")
+            self.download_claim(dl_started or [])    # 即便解析失败，已启动的下载/小游戏仍要领奖
+            self.smallgame_claim(sg_started or [])
             return
 
         # 预约任务全自动：走网页版正规接口（无手机号预约）→ 纯 HTTP，无设备依赖
@@ -767,31 +942,34 @@ class HaoYouKuaiBao:
         if limit and len(todo) > limit:
             todo = todo[:limit]
 
-        if not todo:
+        if todo:
+            log.log(f"📋本次处理 {len(todo)} 个任务："
+                    + "、".join(f"{TASK_MODES.get(t['mode'], t['mode'])}#{t['id']}" for t in todo))
+            for index, task in enumerate(todo, 1):
+                mode = task["mode"]
+                try:
+                    if mode == 1:
+                        self.task_share(task)
+                    elif mode == 2:
+                        self.task_dati(task)
+                    elif mode == 7:
+                        self.task_interactive(task)
+                    elif mode == 9:
+                        self.task_yuyue(task)
+                except RiskStop:
+                    raise
+                except Exception as e:
+                    log.log(f"❌任务[{task['id']}]执行异常：{e}")
+                    self.stats["fail"] += 1
+                if index < len(todo):
+                    time.sleep(random.uniform(*THROTTLE["task_gap"]))
+        else:
             log.log("⏭️没有可自动完成的每日任务（其余任务需在真机上手动完成）")
-            return
 
-        log.log(f"📋本次处理 {len(todo)} 个任务："
-                + "、".join(f"{TASK_MODES.get(t['mode'], t['mode'])}#{t['id']}" for t in todo))
-
-        for index, task in enumerate(todo, 1):
-            mode = task["mode"]
-            try:
-                if mode == 1:
-                    self.task_share(task)
-                elif mode == 2:
-                    self.task_dati(task)
-                elif mode == 7:
-                    self.task_interactive(task)
-                elif mode == 9:
-                    self.task_yuyue(task)
-            except RiskStop:
-                raise
-            except Exception as e:
-                log.log(f"❌任务[{task['id']}]执行异常：{e}")
-                self.stats["fail"] += 1
-            if index < len(todo):
-                time.sleep(random.uniform(*THROTTLE["task_gap"]))
+        # 流水线收尾：领取最前启动的下载任务(约60s计时) + 小游戏(约300s计时)——
+        # 两者计时都已被中间常规任务的耗时吸收大部分
+        self.download_claim(dl_started or [])
+        self.smallgame_claim(sg_started or [])
 
     @staticmethod
     def _mode_enabled(mode: int) -> bool:
@@ -832,6 +1010,20 @@ class HaoYouKuaiBao:
                 self._probe_report(cfg)
                 return
 
+            # 流水线起点：先启动快爆小游戏（mode=15/20，300s 计时）与下载游玩（mode=3，约60s 计时），
+            # 让试玩计时被后续签到/庄园/赛季/预约/分享等任务的耗时吸收，末尾在 daily() 里统一领奖。
+            page_tasks = self.parse_page_tasks(self.page_html)
+            sg_started: List[Dict[str, Any]] = []
+            dl_started: List[Dict[str, Any]] = []
+            if TASK_SWITCHES.get("daily_small_game", False):
+                sg_started = self.smallgame_launch(page_tasks)
+                if sg_started:
+                    time.sleep(random.uniform(*THROTTLE["group_gap"]))
+            if TASK_SWITCHES.get("daily_download", False):
+                dl_started = self.download_launch(page_tasks)
+                if dl_started:
+                    time.sleep(random.uniform(*THROTTLE["group_gap"]))
+
             if TASK_SWITCHES.get("sign", True):
                 self.sign()
                 time.sleep(random.uniform(*THROTTLE["group_gap"]))
@@ -844,15 +1036,20 @@ class HaoYouKuaiBao:
                 self.season()
                 time.sleep(random.uniform(*THROTTLE["group_gap"]))
 
-            self.daily()
+            self.daily(sg_started, dl_started)
 
             if TASK_SWITCHES.get("ycx", True):
                 time.sleep(random.uniform(*THROTTLE["group_gap"]))
                 self.ycx()
 
             s = self.stats
-            log.log(f"📊【{self.user_name}】完成：成功 {s['ok']} / 已领过 {s['skip']} / 失败 {s['fail']}"
-                    + (f" / 爆米花 +{s['baomihua']}" if s["baomihua"] else ""))
+            summary = (f"📊【{self.user_name}】完成：成功 {s['ok']} / 已领过 {s['skip']}"
+                       f" / 待条件 {s['wait']} / 失败 {s['fail']}"
+                       + (f" / 爆米花 +{s['baomihua']}" if s["baomihua"] else ""))
+            log.log(summary)
+            if s["wait"]:
+                log.log("ℹ️「待条件」多为预约领奖冷却（同一天预约后需隔一段时间才放行），"
+                        "非脚本故障，下次运行会自动补领")
 
         except RiskStop as e:
             log.log(f"🛑【{self.user_name or '当前账号'}】{e}")
@@ -878,7 +1075,9 @@ class HaoYouKuaiBao:
 
 
 def load_accounts() -> List[Dict[str, str]]:
-    """读取环境变量；cookie 与数美设备号按顺序一一对应"""
+    """读取环境变量；cookie 与数美设备号 / UA 按顺序一一对应。
+    HYKB_UA 为必设项：缺失或数量少于账号数的账号会被拒绝（不再回退默认 UA），
+    避免用统一默认 UA 冒充多台设备而被服务端判为非真机操作。"""
     cookies = [c for c in (get_env("HYKB_COOKIE", "@") or get_env("Hykb_cookie", "@")) if c]
     if not cookies:
         log.log("❌未找到 Hykb_cookie / HYKB_COOKIE 变量")
@@ -886,20 +1085,37 @@ def load_accounts() -> List[Dict[str, str]]:
     smids = [s for s in get_env("HYKB_SMDEVICEID", "@") if s]
     web_cookies = [w for w in get_env("HYKB_WEB_COOKIE", "@") if w]
     devices = [d for d in get_env("HYKB_DEVICE", "@") if d]
-    uas = [u for u in get_env("HYKB_UA", "@") if u]
+    # 注意：HYKB_UA 的值本身含 "@4399_sykb_android_activity@"，绝不能沿用 "@" 做多账号分隔符
+    # （会把单个 UA 从中间截断、丢掉服务端机型校验标记）——HYKB_UA 多账号一律用换行分隔
+    # （get_env 会对每段 strip 掉首尾空白，顺带去掉行尾回车符）。
+    uas = [u for u in get_env("HYKB_UA", "\n") if u]
+    if not uas:
+        log.log("❌未配置 HYKB_UA：该变量为必设项（服务端按 UA 机型做真机白名单校验），"
+                "请抓包取真机原样 UA 后配置；脚本终止。")
+        return []
 
     def pick(seq: List[str], index: int) -> str:
         if not seq:
             return ""
         return seq[index] if index < len(seq) else seq[0]
 
-    return [{
-        "cookie": cookie,
-        "smdeviceid": pick(smids, i),
-        "device": pick(devices, i),
-        "ua": pick(uas, i),
-        "web_cookie": pick(web_cookies, i),
-    } for i, cookie in enumerate(cookies)]
+    accounts: List[Dict[str, str]] = []
+    for i, cookie in enumerate(cookies):
+        # UA 严格按序号一一对应，不走 pick 的“回退到第一个”——否则多账号会共用同一 UA，
+        # 等于用统一 UA 冒充多台设备，正是要避免的非真机特征。
+        ua = uas[i].strip() if i < len(uas) else ""
+        if not ua:
+            log.log(f"❌第 {i + 1} 个账号未配置对应的 HYKB_UA（多账号须与 HYKB_COOKIE 用 @ 同序对应），"
+                    "跳过该账号——UA 为必设项，不回退默认值、也不复用其它账号的 UA。")
+            continue
+        accounts.append({
+            "cookie": cookie,
+            "smdeviceid": pick(smids, i),
+            "device": pick(devices, i),
+            "ua": ua,
+            "web_cookie": pick(web_cookies, i),
+        })
+    return accounts
 
 
 def main() -> None:

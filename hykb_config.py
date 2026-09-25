@@ -4,7 +4,7 @@
 # @desc         好游快爆「翻滚吧爆米花」玉米庄园 —— 配置与协议常量
 #               2026-09 依据线上 H5(v_v20260921) 与 APP(1.5.8.204) 逆向重写
 """
-协议要点（全部来自线上代码实测，非猜测）：
+协议要点：
 
 1. 页面令牌：每次打开 index.php，服务端随机下发
       var pageToken = "xxxxxx";        // 6 位
@@ -65,16 +65,11 @@ NATIVE_API = {
 # UA 说明：App 侧 UAHelper.b() 的拼装格式为
 #     Androidkb/<app版本>(android;<机型>;<安卓版本>;<宽>x<高>;<网络>)
 # WebView 再追加 ";@4399_sykb_android_activity@"
-# 活动服务端会截取 UA 中 "Androidkb" 到 "@4399_sykb_android_activity@" 之间的
-# 机型字段做模拟器白名单校验（Verify.ValEmulatorOrVirtualAPKWhiteList），
-# 因此 UA 必须与账号真实机型一致 —— 建议用抓包原样 UA（环境变量 HYKB_UA）。
-# 以下 UA / sec-ch-ua 取自真机抓包（2026-09-24，一加13 PJZ110 / Android 16 / WebView Chrome 151）
-DEFAULT_UA = (
-    "Mozilla/5.0 (Linux; Android 16; PJZ110 Build/BP2A.250605.015; wv) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/151.0.7922.199 "
-    "Mobile Safari/537.36Androidkb/1.5.8.204(android;PJZ110;16;1440x2952;WiFi)"
-    ";@4399_sykb_android_activity@"
-)
+# UA（环境变量 HYKB_UA）为「必设」变量：活动服务端会截取 UA 中 "Androidkb" 到
+# "@4399_sykb_android_activity@" 之间的机型字段做模拟器白名单校验
+# （Verify.ValEmulatorOrVirtualAPKWhiteList），UA 必须与账号真实机型一致。
+# 不内置默认 UA —— 缺失时脚本直接拒绝运行（见 好游快爆.py 的 load_accounts），
+# 避免用统一默认 UA 冒充多台设备而被判为非真机操作。
 
 API_CONFIG = {
     "headers": {
@@ -110,9 +105,10 @@ THROTTLE = {
     "max_retry": 2,             # 单请求最大重试次数
     "retry_backoff": 2.5,       # 重试退避基数（秒）
     "small_game_wait": 330,     # 小游戏任务需游玩 5 分钟，脚本等待秒数
+    "download_wait": 95,        # 下载游玩任务（mode=3）领奖窗口约 60s，留余量
 }
 
-# ─────────────── 网页版预约（纯接口，无设备依赖；青龙可直接定时跑）───────────────
+# ─────────────── 网页版预约）───────────────
 # 为什么用网页版：预约动作在 App 侧是加密私有接口（params_encryption=1 的 native AES 体
 # + svid/SECRET-DEVICE 设备头 + native 签名 t），活动凭据直连必被 token error 拒绝；
 # H5 活动域也没有预约能力（153 个 ac 里只有查询/领奖）。
@@ -150,14 +146,14 @@ TASK_SWITCHES = {
     "daily_interactive": True,   # mode=7  好友互动（需好友家有待帮收玉米，没有则跳过）
     "daily_yuyue": True,         # mode=9  预约领奖（已预约的游戏自动领奖）
     "daily_yuyue_auto": True,    # mode=9  预约全自动：走网页版正规接口预约（见 WEB_YUYUE）
-    "daily_small_game": False,   # mode=15/20 快爆小游戏（需真实游玩 5 分钟，默认关）
+    "daily_small_game": True,    # mode=15/20 快爆小游戏：纯接口领奖（启动→等 5 分钟→领，实测每个 +3 爆米花）
+    "daily_download": True,      # mode=3  下载游玩：纯接口领奖（下载埋点→记开始→等 60s→领，实测每个 +2~66 爆米花）
     "season": True,              # 赛季等级奖励（线上已禁用批量接口，改为逐个等级领取）
     "ycx": True,                 # 一次性任务（分享 / 答题类）
     "daily_max": 0,              # 每日任务单次运行处理上限，0=不限制
 }
 
 # ─────────────────────────── 任务类型（页面 data-mode → 业务类型）───────────────────────────
-# 实测（2026-09-24 线上页面）：
 #   1=分享福利/分享资讯  2=每日答题  3=下载体验  4=种草好友  5=云游戏  7=好友互动
 #   9=预约游戏  11=热玩推荐  15=快爆小游戏  17=爆友热议  20=小游戏(模板)
 TASK_MODES = {
@@ -174,10 +170,8 @@ TASK_MODES = {
     20: "快爆小游戏",
 }
 
-# 只有这些 mode 脚本能自己走完「做任务 → 领奖」闭环
 AUTO_MODES = (1, 2, 7, 9)
 
-# ─────────────────────────── 响应码 ───────────────────────────
 ERROR_CODES = {
     "SUCCESS": "ok",
     "NO_LOGIN": "103",
@@ -190,7 +184,7 @@ ERROR_CODES = {
     "NEED_HARVEST": "2005",
 }
 
-# 风控关键字：命中即停止该账号（不是脚本 bug，硬重试只会加重处置）
+# 风控关键字
 RISK_KWS = (
     "验证码", "异常", "频繁", "非法", "黑名单", "风控", "操作过快",
     "请稍后再试", "环境异常", "请使用手机参与", "重新登录",
@@ -199,6 +193,11 @@ RISK_KWS = (
 SKIP_KWS = (
     "已领取", "已经领取", "已领过", "今日已", "今天已", "已经完成",
     "已完成", "已签到", "已经签到",
+)
+
+# 待条件关键字：非脚本故障，明日/稍后服务端自然恢复（预约领奖冷却等），不计失败
+WAIT_KWS = (
+    "暂时无法领取", "暂时无法", "冷却", "稍后再领", "尚未到", "未到时间",
 )
 
 # App 侧黑名单等级（页面 ACT.userlevel），>=2 表示已被风控处置
