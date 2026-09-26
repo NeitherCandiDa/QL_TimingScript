@@ -35,6 +35,7 @@
 # ─────────────────────────── 域名与端点 ───────────────────────────
 
 BASE_URL = "https://huodong3.3839.com"
+SHOP_URL = "https://shop.3839.com"      # 爆米花商店（种子兜底购买；独立域，不走活动 token）
 ACTIVITY_PATH = "/n/hykb/cornfarm"
 PAGE_URL = f"{BASE_URL}{ACTIVITY_PATH}/index.php?imm=0"
 
@@ -51,7 +52,15 @@ API_ENDPOINTS = {
     "friendhome": f"{BASE_URL}{ACTIVITY_PATH}/ajax_friendhome.php",    # 好友主页
     "more": f"{BASE_URL}{ACTIVITY_PATH}/ajax_more.php",     # 成就 / 口令 / 额外分享
     "birthday": f"{BASE_URL}{ACTIVITY_PATH}/ajax_birthday.php",  # 生日礼
+    # 爆米花商店（独立系统 shop.3839.com）：种子兜底购买用。判定字段是 code==200（非活动域的 key==ok），
+    # 且不走活动域的 token 签名。checkOrder 校验+拿余额，createOrder 真扣爆米花下单（须带 order_flag=1）。
+    "shop_order": f"{SHOP_URL}/index.php?c=OrderVirtual",
 }
+
+# 爆米花商店种子商品：普通玉米种子(corn_id=1) 对应 shop 商品 id=8220，约 5 爆米花/颗。
+# 运行时优先从活动页 CornList 的 source_url 动态解析，这里只作解析失败时的兜底默认值。
+SEED_SHOP_GOODS_ID = "8220"
+SEED_SHOP_CORN_ID = 1
 
 # APP 原生爆米花接口（仅用于余额/明细查询，mall 域名走 HTTP）
 NATIVE_API = {

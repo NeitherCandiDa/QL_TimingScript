@@ -72,6 +72,8 @@ from hykb_config import (
     ERROR_CODES,
     RESPONSE_MESSAGES,
     RISK_KWS,
+    SEED_SHOP_CORN_ID,
+    SEED_SHOP_GOODS_ID,
     SKIP_KWS,
     TASK_MODES,
     TASK_SWITCHES,
@@ -89,6 +91,12 @@ PAGE_TOKEN_TTL_MS = 23 * 3600 * 1000 - 10 * 60 * 1000
 
 # 玉米成熟度已满 / 需要先收获 —— 领奖接口会返回这两个码，处理后可重试一次
 MATURITY_CODES = ("2004", "2005")
+# 领奖时「田地状态不对」的提示关键词（服务端 info）：需要先收获或先播种，
+# 命中后就地修复庄园（收获+补种 / 播种）再重试领奖。注意与下载/小游戏的
+# 「试玩时间未到」区分——后者 info 讲的是时间，不含这些农事词，不会误命中。
+FARM_BLOCK_KWS = ("还没有播种", "没有播种", "未播种", "先去播种", "先播种", "未种下",
+                  "去种植", "请收割", "先收割", "去收割", "请收获", "先收获",
+                  "成熟度已", "成熟度达", "达到100")
 
 
 class RiskStop(Exception):
@@ -115,6 +123,11 @@ def is_skip(text: str) -> bool:
 def is_wait(text: str) -> bool:
     """待条件（非故障）：预约领奖冷却等，服务端稍后/明日自然恢复"""
     return any(k in text for k in WAIT_KWS)
+
+
+def farm_blocked(text: str) -> bool:
+    """领奖被「田地状态」卡住（需先收获/先播种）——就地修复庄园再重试"""
+    return any(k in text for k in FARM_BLOCK_KWS)
 
 
 # ───────────────────────── 每日答题题库 ─────────────────────────
@@ -453,41 +466,143 @@ class HaoYouKuaiBao:
             log.log(f"⚠️浇水签到未成功：{str(msg)[:180]}")
             self.stats["fail"] += 1
 
-    def manor(self, cfg: Dict[str, Any]) -> None:
-        """庄园：成熟则收获，空地则播种"""
-        maturity = str(cfg.get("csd_jdt", ""))
-        grew = str(cfg.get("grew", ""))
+    def manor(self, cfg: Optional[Dict[str, Any]] = None) -> None:
+        """庄园闭环：成熟→立即收获，空地→立即播种，无种子→用赛季经验兑换种子再播种。
+        cfg 传入登录 config（run 首次调用）；cfg=None 时重新登录取实时状态
+        （供领奖流程中途「成熟度已满」补救调用，确保收获后田里立刻补上成长中的玉米）。"""
+        st = cfg if cfg is not None else self.login()
+        if not st:
+            return
+        self._farm_loop(st)
+
+    def _farm_loop(self, st: Dict[str, Any]) -> None:
+        grew = str(st.get("grew", ""))
+        maturity = str(st.get("csd_jdt", ""))
+        # 1) 成熟度已满 → 立即收获（HarvestAndPlant 会顺带补种，默认种子缺货时只收不种）
         if maturity == "100%" or grew == "100":
             msg = self.post("plant", {"ac": "HarvestAndPlant", "r": rand_param()}, "收获并播种")
-            if msg and str(msg.get("key")) == ERROR_CODES["SUCCESS"]:
-                log.log(f"🌽收获并播种成功（{self._reward_text(msg)}）")
+            if not msg:
+                return
+            key = str(msg.get("key"))
+            if key == ERROR_CODES["SUCCESS"]:
                 self._count_baomihua(msg)
                 self.stats["ok"] += 1
-            elif msg:
-                log.log(f"⚠️收获未成功：{str(msg)[:160]}")
-            return
-
-        if grew in ("-1", "0", ""):
-            bag = self.post("bag", {"ac": "BagInit", "r": rand_param()}, "背包")
-            corn_id = self._pick_seed(bag)
-            if corn_id is None:
-                # 背包无库存种子时，退回登录 config 里的 next_seed_id（页面默认选中的种子）
-                try:
-                    corn_id = int(cfg.get("next_seed_id") or 0) or None
-                except (TypeError, ValueError):
-                    corn_id = None
-            if corn_id is None:
-                log.log("⏭️没有可用种子，跳过播种（种子来自每日任务奖励 / 爆米花商店兑换）")
-                self.stats["skip"] += 1
+                if str(msg.get("grew")) == "-1":
+                    # 只收割成功、未自动补种（默认选中的种子缺货）→ 立即手动播种把田种上
+                    log.log("🌽收获成功，但默认种子缺货未自动补种，改手动播种")
+                    self._plant(st)
+                else:
+                    log.log(f"🌽收获并播种成功（{self._reward_text(msg)}）")
                 return
-            msg = self.post("plant", {"ac": "Plant", "corn_id": corn_id, "r": rand_param()}, "播种")
-            if msg and str(msg.get("key")) == ERROR_CODES["SUCCESS"]:
-                log.log(RESPONSE_MESSAGES["plant_success"])
-                self.stats["ok"] += 1
-            elif msg:
-                log.log(f"⚠️播种未成功：{str(msg)[:160]}")
+            if key in ("502", "503"):
+                # 田里已无成长中/成熟的作物（可能刚被收走）→ 按空地处理去播种
+                grew = "-1"
+            else:
+                log.log(f"⚠️收获未成功：{str(msg)[:150]}")
+                return
+        # 2) 空地 → 立即播种
+        if grew in ("-1", "0", ""):
+            self._plant(st)
         else:
-            log.log("⏭️庄园作物未成熟，今日无需收获")
+            log.log("🌽庄园作物成长中，今日无需收获")
+
+    def _plant(self, st: Dict[str, Any]) -> None:
+        """播种：库存种子 → 赛季经验兑换（免费）→ 花爆米花买（兜底）→ 页面默认种子。
+        取种子顺序按「先不花钱、再花钱」：背包 > 经验兑换 > 爆米花购买。"""
+        bag = self.post("bag", {"ac": "BagInit", "r": rand_param()}, "背包")
+        corn_id = self._pick_seed(bag)
+        if corn_id is None:
+            # 背包无库存种子 → 先用赛季经验兑换（站内闭环，不动用爆米花）
+            corn_id = self._exchange_seed()
+        if corn_id is None:
+            # 经验也不够 → 花爆米花去商店买（用户认可的兜底，值得花）
+            corn_id = self._buy_seed_shop()
+        if corn_id is None:
+            # 最后兜底：页面默认选中的种子 id（可能仍无库存，Plant 会自行报错）
+            try:
+                corn_id = int(st.get("next_seed_id") or 0) or None
+            except (TypeError, ValueError):
+                corn_id = None
+        if corn_id is None:
+            log.log("⏭️无库存种子，经验兑换与爆米花购买均失败，暂不播种（下次运行自动重试）")
+            self.stats["skip"] += 1
+            return
+        msg = self.post("plant", {"ac": "Plant", "corn_id": corn_id, "r": rand_param()},
+                        f"播种(种子{corn_id})")
+        if msg and str(msg.get("key")) == ERROR_CODES["SUCCESS"]:
+            log.log(f"🌱播种成功（种子 corn_id={corn_id}）")
+            self.stats["ok"] += 1
+        elif msg:
+            log.log(f"⚠️播种未成功：{str(msg)[:150]}")
+
+    def _exchange_seed(self) -> Optional[int]:
+        """无库存种子时，用赛季经验兑换种子（纯接口、不花爆米花）。
+        赛季兑换目录：prize_id=7 奇异种子(corn_id=3)、prize_id=8 糯玉米种子(corn_id=2)，
+        各需 100 经验、每期限兑 20 次。经验不足则返回 None（交给爆米花购买兜底）。
+        返回成功兑换到的 corn_id，供随后 Plant 使用。"""
+        for prize_id, corn_id, name in ((7, 3, "奇异种子"), (8, 2, "糯玉米种子")):
+            msg = self.post("season", {"ac": "userExchangePrize", "prize_id": prize_id,
+                                        "r": rand_param()}, f"经验兑换{name}")
+            if not msg:
+                continue
+            if str(msg.get("key")) == ERROR_CODES["SUCCESS"]:
+                log.log(f"🎁已用赛季经验兑换 {name}（未花爆米花）")
+                return corn_id
+            log.log(f"ℹ️兑换{name}未成功（多为赛季经验不足）：{str(msg)[:100]}")
+        return None
+
+    def _shop_goods_id(self) -> str:
+        """从活动页 CornList 动态解析普通玉米种子的商店商品 id（source_url 里的 id=XXXX），
+        解析失败退回配置默认 SEED_SHOP_GOODS_ID。"""
+        m = re.search(r'shop\.3839\.com[^"\']*?[?&]id=(\d+)', self.page_html or "")
+        return m.group(1) if m else SEED_SHOP_GOODS_ID
+
+    def _shop_post(self, action: str, goods_id: str) -> Optional[Dict[str, Any]]:
+        """向爆米花商店（shop.3839.com）发请求：独立域、不走活动 token 签名，
+        参数沿用真机抓包字段（id/smdeviceid/version/client/scookie/device），判定字段是 code。"""
+        url = f"{API_ENDPOINTS['shop_order']}&a={action}"
+        payload = {
+            "id": goods_id,
+            "smdeviceid": self.smdeviceid,
+            "version": CLIENT_VERSION,
+            "r": rand_param(),
+            "client": "1",
+            "scookie": self.scookie,
+            "device": self.device,
+            "order_flag": "1",     # createOrder 需要（页面 CommDetail.orderFlag=1）
+        }
+        self._pace()
+        try:
+            resp = self.client.post(url, data=payload, timeout=API_CONFIG["timeout"])
+            return resp.json()
+        except Exception as e:
+            log.log(f"❌商店{action}请求异常：{e}")
+            return None
+
+    def _buy_seed_shop(self) -> Optional[int]:
+        """花爆米花去商店买种子（兜底，用户认可值得花）。
+        链路：checkOrder 校验+查余额 → createOrder 真下单扣爆米花。商店判定字段是 code==200。
+        余额不足 / 未绑定微信 / 抢光等一律安全跳过，不硬重试。成功返回普通玉米 corn_id=1。"""
+        goods_id = self._shop_goods_id()
+        chk = self._shop_post("checkOrder", goods_id)
+        if not chk:
+            return None
+        if int(chk.get("code") or 0) != 200:
+            log.log(f"ℹ️商店购买种子受阻（checkOrder code={chk.get('code')}）："
+                    f"{str(chk.get('msg') or chk)[:80]}")
+            return None
+        bmh = (chk.get("user") or {}).get("bmh")
+        log.log(f"🛒尝试用爆米花购买种子（商品 {goods_id}，当前爆米花余额 {bmh}）")
+        order = self._shop_post("createOrder", goods_id)
+        if not order:
+            return None
+        if int(order.get("code") or 0) == 200:
+            bal = (order.get("user") or {}).get("bmh")
+            tail = f"，爆米花余额 {bal}" if bal is not None else ""
+            log.log(f"✅已用爆米花购买种子成功{tail}")
+            return SEED_SHOP_CORN_ID
+        log.log(f"⚠️爆米花购买种子未成功（code={order.get('code')}）：{str(order.get('msg') or order)[:100]}")
+        return None
 
     @staticmethod
     def _pick_seed(bag: Optional[Dict[str, Any]]) -> Optional[int]:
@@ -614,7 +729,7 @@ class HaoYouKuaiBao:
         return tasks
 
     def _claim(self, action: str, task_id: int, label: str) -> bool:
-        """统一走领奖接口（*Ling）；成熟度满时先收获再领，最多补一次"""
+        """统一走领奖接口（*Ling）；遇「田地状态」阻塞（成熟度满需收获 / 未播种）先就地修复庄园再领"""
         param: Dict[str, Any] = {
             "ac": action,
             "id": task_id,
@@ -626,9 +741,10 @@ class HaoYouKuaiBao:
         if not msg:
             return False
         key = str(msg.get("key"))
-        if key in MATURITY_CODES:
-            log.log(f"🌽{label}：玉米成熟度已满，先收获再领奖")
-            self.manor({"csd_jdt": "100%", "grew": "100"})
+        # 成熟度满(2004/2005) 或 info 提示需先收获/先播种 → 就地跑一次庄园闭环（取实时状态）再重试一次
+        if key in MATURITY_CODES or farm_blocked(str(msg)):
+            log.log(f"🌽{label}：田地未就绪（{str(msg.get('info') or key)[:40]}），先跑庄园闭环再领")
+            self.manor()          # 无参=重新登录取实时状态，收获/播种/兑种子一步到位
             msg = self.post("daily", dict(param, r=rand_param()), label + "-重试")
             if not msg:
                 return False
@@ -871,7 +987,8 @@ class HaoYouKuaiBao:
             time.sleep(random.uniform(*THROTTLE["task_gap"]))
 
     def _claim_delayed(self, action: str, task: Dict[str, Any], kind: str) -> None:
-        """领取「延时类」任务奖励（小游戏 / 下载游玩通用）：遇 2005 成熟度满先收获再重试（最多 3 次）。
+        """领取「延时类」任务奖励（小游戏 / 下载游玩通用）：
+        遇 2005 成熟度满 / info 提示需先收获或先播种 → 就地跑庄园闭环再重试（最多 3 次）。
         2002=请先体验/试玩、2003=时间未到 → 记 skip（多为需真机或计时未足，非脚本故障）。"""
         label = f"{kind}[{task['id']}]"
         for _ in range(3):
@@ -881,19 +998,23 @@ class HaoYouKuaiBao:
             if not msg:
                 return
             key = str(msg.get("key"))
-            if key in MATURITY_CODES:
-                log.log(f"🌽{label}：玉米成熟度已满，先收获再领奖")
-                self.manor({"csd_jdt": "100%", "grew": "100"})
+            # 田地未就绪优先判（成熟度满 / info 提示需先收获或先播种）——farm 关键词与
+            # 「试玩时间未到」互斥，故 2003 讲时间时不会误命中，只有真的田地问题才跑庄园。
+            if key in MATURITY_CODES or farm_blocked(str(msg)):
+                log.log(f"🌽{label}：田地未就绪（{str(msg.get('info') or key)[:40]}），先跑庄园闭环再领")
+                self.manor()          # 无参=取实时状态收获/播种/兑种子，修复后重试领奖
                 continue
+            # 2002=请先体验(需真机)、2003=试玩时间未到(计时未足)——非田地问题，跳过
+            if key in ("2002", "2003"):
+                log.log(f"⏭️{label}需真机内真实游玩或计时未足（服务端回 {key}），跳过")
+                self.stats["skip"] += 1
+                return
             if key == ERROR_CODES["SUCCESS"]:
                 log.log(f"✅{label}领取成功（{self._reward_text(msg)}）")
                 self._count_baomihua(msg)
                 self.stats["ok"] += 1
             elif key == "2001" or is_skip(str(msg)):
                 log.log(f"⏭️{label}今日已领取")
-                self.stats["skip"] += 1
-            elif key in ("2002", "2003"):   # 请先体验/试玩时间未到（需真机或计时未足）
-                log.log(f"⏭️{label}需真机内真实游玩或计时未足（服务端回 {key}），跳过")
                 self.stats["skip"] += 1
             elif is_wait(str(msg)):
                 log.log(f"⚠️{label}待条件：{str(msg)[:110]}")
@@ -902,6 +1023,9 @@ class HaoYouKuaiBao:
                 log.log(f"⚠️{label}未领取：{str(msg)[:130]}")
                 self.stats["fail"] += 1
             return
+        # 3 次都卡在「田地未就绪」——庄园闭环没能修好（如种子和赛季经验都耗尽），记失败别静默吞掉
+        log.log(f"⚠️{label}多次尝试后田地仍未就绪，本次放弃（下次运行自动重试）")
+        self.stats["fail"] += 1
 
     def _claim_smallgame(self, task: Dict[str, Any]) -> None:
         """领取单个小游戏奖励（复用 _claim_delayed）"""
